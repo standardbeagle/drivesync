@@ -1,0 +1,16 @@
+# Binaries
+/drivesync
+*.exe
+
+# Build output
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
