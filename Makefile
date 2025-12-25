@@ -34,9 +34,13 @@ fmt:
 vet:
 	go vet ./...
 
-# Create bootable USB image
+# Create bootable USB image (placeholder structure only)
 usb: build
 	./boot/build-usb.sh
+
+# Create complete bootable USB image with Alpine Linux
+usb-alpine: build
+	./boot/build-alpine.sh
 
 # Create release artifacts
 release: build usb
@@ -76,7 +80,8 @@ help:
 	@echo "  lint           Run linter"
 	@echo "  fmt            Format code"
 	@echo "  vet            Run go vet"
-	@echo "  usb            Create bootable USB image"
+	@echo "  usb            Create bootable USB image (placeholder)"
+	@echo "  usb-alpine     Create complete bootable USB with Alpine Linux"
 	@echo "  release        Create release artifacts"
 	@echo "  install        Install binary to /usr/local/bin"
 	@echo "  run            Build and run (requires sudo)"

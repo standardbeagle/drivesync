@@ -23,11 +23,14 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cpio
+
       - name: Build binary
         run: make build
 
-      - name: Build USB image
-        run: make usb
+      - name: Build USB image (Alpine-based)
+        run: make usb-alpine
 
       - name: Create release
         uses: softprops/action-gh-release@v1

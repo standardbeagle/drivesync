@@ -53,7 +53,9 @@ func Clone(srcPath, dstPath string, opts Options, progress chan<- Progress) (*Re
 				return nil, fmt.Errorf("determine source size: %w", err)
 			}
 			cloneSize = size
-			src.Seek(0, io.SeekStart)
+			if _, err := src.Seek(0, io.SeekStart); err != nil {
+				return nil, fmt.Errorf("seek to start: %w", err)
+			}
 		} else {
 			cloneSize = fi.Size()
 		}

@@ -208,7 +208,7 @@ on-complete "shutdown"
 				return
 			}
 			if tt.check != nil && err == nil {
-				tt.check(cfg)
+				_ = tt.check(cfg)
 			}
 		})
 	}
