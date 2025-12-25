@@ -35,4 +35,21 @@ jobs:
           files: |
             dist/drivesync-linux-amd64
             dist/drivesync-usb.zip
+            dist/drivesync-usb-auto.zip
           generate_release_notes: true
+          body: |
+            ## Downloads
+
+            | File | Description |
+            |------|-------------|
+            | `drivesync-linux-amd64` | Static binary for Linux |
+            | `drivesync-usb.zip` | Standard edition - interactive mode with full TUI |
+            | `drivesync-usb-auto.zip` | Auto-clone edition - boots and clones automatically, no interaction required |
+
+            ### Auto-Clone Edition
+            The auto-clone edition is pre-configured to:
+            - Boot directly into cloning mode
+            - Clone the internal drive to the boot drive
+            - No user interaction required
+
+            Perfect for batch cloning operations or deployment scenarios.
