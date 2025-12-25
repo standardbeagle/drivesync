@@ -105,7 +105,7 @@ SELF-OVERWRITE MODE:
 If you extracted DriveSync to the destination drive instead of a USB stick,
 DriveSync will detect this and offer one-click cloning of your internal drive.
 
-For more information: https://github.com/beagle/drivesync
+For more information: https://github.com/standardbeagle/drivesync
 EOF
 
     info "Bootable structure created"

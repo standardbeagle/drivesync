@@ -7,9 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/beagle/drivesync/internal/clone"
-	"github.com/beagle/drivesync/internal/config"
-	"github.com/beagle/drivesync/internal/devices"
+	"github.com/standardbeagle/drivesync/internal/clone"
+	"github.com/standardbeagle/drivesync/internal/config"
+	"github.com/standardbeagle/drivesync/internal/devices"
 )
 
 // Screen represents the current screen in the TUI.

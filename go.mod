@@ -1,4 +1,4 @@
-module github.com/beagle/drivesync
+module github.com/standardbeagle/drivesync
 
 go 1.24.2
 

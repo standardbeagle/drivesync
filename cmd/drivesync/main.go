@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/beagle/drivesync/internal/config"
-	"github.com/beagle/drivesync/internal/tui"
+	"github.com/standardbeagle/drivesync/internal/config"
+	"github.com/standardbeagle/drivesync/internal/tui"
 )
 
 var version = "dev"
@@ -112,5 +112,5 @@ Self-Overwrite Mode:
          source "internal"
          destination "boot-drive"
 
-For more information, visit: https://github.com/beagle/drivesync`)
+For more information, visit: https://github.com/standardbeagle/drivesync`)
 }

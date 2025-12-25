@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/beagle/drivesync/internal/devices"
+	"github.com/standardbeagle/drivesync/internal/devices"
 )
 
 func TestGUIDString(t *testing.T) {
