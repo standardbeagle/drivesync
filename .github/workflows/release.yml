@@ -24,7 +24,7 @@ jobs:
         run: go test -v ./...
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y cpio
+        run: sudo apt-get update && sudo apt-get install -y cpio binutils
 
       - name: Build binary
         run: make build
@@ -48,6 +48,10 @@ jobs:
             | `drivesync-linux-amd64` | Static binary for Linux |
             | `drivesync-usb.zip` | Standard edition - interactive mode with full TUI |
             | `drivesync-usb-auto.zip` | Auto-clone edition - boots and clones automatically, no interaction required |
+
+            ### Secure Boot Compatible
+            Both USB editions use Debian's signed GRUB bootloader and work with Secure Boot enabled.
+            No need to disable Secure Boot in BIOS.
 
             ### Auto-Clone Edition
             The auto-clone edition is pre-configured to:

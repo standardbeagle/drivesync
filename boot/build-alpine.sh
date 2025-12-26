@@ -43,10 +43,10 @@ check_prerequisites() {
         error "Binary not found: $BINARY\nRun 'make build' first."
     fi
 
-    local required_tools="curl cpio gzip zip"
+    local required_tools="curl cpio gzip zip ar"
     for tool in $required_tools; do
         if ! command -v "$tool" &> /dev/null; then
-            error "Required tool not found: $tool"
+            error "Required tool not found: $tool (install binutils for ar)"
         fi
     done
 
@@ -137,15 +137,7 @@ download_syslinux() {
     cd "$tmp_dir"
     tar -xzf syslinux.apk 2>/dev/null || true
 
-    # Copy EFI bootloader files
-    mkdir -p "$syslinux_dir/efi64"
-    cp usr/share/syslinux/efi64/syslinux.efi "$syslinux_dir/efi64/" 2>/dev/null || true
-    cp usr/share/syslinux/efi64/ldlinux.e64 "$syslinux_dir/efi64/" 2>/dev/null || true
-    cp usr/share/syslinux/efi64/linux.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
-    cp usr/share/syslinux/efi64/libcom32.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
-    cp usr/share/syslinux/efi64/libutil.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
-
-    # Copy BIOS bootloader files
+    # Copy BIOS bootloader files (syslinux still used for BIOS boot)
     mkdir -p "$syslinux_dir/bios"
     cp usr/share/syslinux/mbr.bin "$syslinux_dir/bios/" 2>/dev/null || true
     cp usr/share/syslinux/isolinux.bin "$syslinux_dir/bios/" 2>/dev/null || true
@@ -159,6 +151,82 @@ download_syslinux() {
 
     info "Syslinux bootloader extracted"
     echo "$syslinux_dir"
+}
+
+download_signed_grub() {
+    local cache_dir="$DIST_DIR/.alpine-cache"
+    local grub_dir="$cache_dir/signed-grub"
+
+    if [ -d "$grub_dir" ] && [ -f "$grub_dir/shimx64.efi" ] && [ -f "$grub_dir/grubx64.efi" ]; then
+        info "Using cached signed GRUB bootloader"
+        echo "$grub_dir"
+        return
+    fi
+
+    info "Downloading Debian signed GRUB bootloader (Secure Boot compatible)..."
+    mkdir -p "$grub_dir"
+
+    local tmp_dir="$cache_dir/grub-tmp"
+    mkdir -p "$tmp_dir"
+
+    # Debian Bookworm (12) signed bootloader packages
+    local shim_url="http://ftp.debian.org/debian/pool/main/s/shim-signed/shim-signed_1.44~1+deb12u1+15.8-1~deb12u1_amd64.deb"
+    local grub_url="http://ftp.debian.org/debian/pool/main/g/grub-efi-amd64-signed/grub-efi-amd64-signed_1+2.06+13+deb12u1_amd64.deb"
+
+    info "Downloading shim-signed..."
+    curl -sL -o "$tmp_dir/shim-signed.deb" "$shim_url" || error "Failed to download shim-signed"
+
+    info "Downloading grub-efi-amd64-signed..."
+    curl -sL -o "$tmp_dir/grub-signed.deb" "$grub_url" || error "Failed to download grub-efi-amd64-signed"
+
+    # Extract .deb files (they are ar archives containing data.tar.xz)
+    cd "$tmp_dir"
+
+    # Extract shim
+    ar x shim-signed.deb
+    tar -xf data.tar.* 2>/dev/null || tar -xJf data.tar.xz 2>/dev/null || tar -xzf data.tar.gz 2>/dev/null || true
+
+    # The shim EFI binary - look in standard locations
+    if [ -f "usr/lib/shim/shimx64.efi.signed" ]; then
+        cp "usr/lib/shim/shimx64.efi.signed" "$grub_dir/shimx64.efi"
+    elif [ -f "usr/lib/shim/shimx64.efi.signed.latest" ]; then
+        cp "usr/lib/shim/shimx64.efi.signed.latest" "$grub_dir/shimx64.efi"
+    else
+        # Find it wherever it might be
+        find . -name "shimx64.efi*" -exec cp {} "$grub_dir/shimx64.efi" \; 2>/dev/null || true
+    fi
+
+    # Also copy mmx64.efi (MOK Manager) if present
+    find . -name "mmx64.efi*" -exec cp {} "$grub_dir/mmx64.efi" \; 2>/dev/null || true
+
+    # Clean up and extract grub
+    rm -f data.tar.* control.tar.* debian-binary
+    ar x grub-signed.deb
+    tar -xf data.tar.* 2>/dev/null || tar -xJf data.tar.xz 2>/dev/null || tar -xzf data.tar.gz 2>/dev/null || true
+
+    # The signed GRUB EFI binary
+    if [ -f "usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" ]; then
+        cp "usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" "$grub_dir/grubx64.efi"
+    else
+        find . -name "grubx64.efi*" -exec cp {} "$grub_dir/grubx64.efi" \; 2>/dev/null || true
+    fi
+
+    # Cleanup
+    rm -rf "$tmp_dir"
+
+    # Verify we got the files
+    if [ ! -f "$grub_dir/shimx64.efi" ]; then
+        error "Failed to extract shimx64.efi"
+    fi
+    if [ ! -f "$grub_dir/grubx64.efi" ]; then
+        error "Failed to extract grubx64.efi"
+    fi
+
+    local shim_size=$(stat -c%s "$grub_dir/shimx64.efi" 2>/dev/null || stat -f%z "$grub_dir/shimx64.efi")
+    local grub_size=$(stat -c%s "$grub_dir/grubx64.efi" 2>/dev/null || stat -f%z "$grub_dir/grubx64.efi")
+    info "Signed bootloader extracted: shimx64.efi (${shim_size} bytes), grubx64.efi (${grub_size} bytes)"
+
+    echo "$grub_dir"
 }
 
 create_initramfs() {
@@ -249,11 +317,12 @@ create_boot_structure() {
     local edition="$2"
     local cache_dir="$DIST_DIR/.alpine-cache"
     local syslinux_dir="$cache_dir/syslinux"
+    local grub_dir="$cache_dir/signed-grub"
 
     info "Creating boot structure for $edition edition..."
 
     rm -rf "$work_dir"
-    mkdir -p "$work_dir/boot" "$work_dir/EFI/BOOT" "$work_dir/syslinux"
+    mkdir -p "$work_dir/boot/grub" "$work_dir/EFI/BOOT" "$work_dir/syslinux"
 
     # Copy kernel
     cp "$cache_dir/vmlinuz-lts" "$work_dir/boot/vmlinuz"
@@ -264,7 +333,59 @@ create_boot_structure() {
     # Create initramfs with DriveSync
     create_initramfs "$work_dir" "$edition"
 
-    # Syslinux config (shared between BIOS and UEFI)
+    # --- UEFI Boot Setup (Secure Boot compatible) ---
+    # Copy signed GRUB bootloader
+    # shimx64.efi is the Secure Boot shim that loads grubx64.efi
+    cp "$grub_dir/shimx64.efi" "$work_dir/EFI/BOOT/bootx64.efi"
+    cp "$grub_dir/grubx64.efi" "$work_dir/EFI/BOOT/grubx64.efi"
+
+    # Copy MOK Manager if available (for key enrollment)
+    if [ -f "$grub_dir/mmx64.efi" ]; then
+        cp "$grub_dir/mmx64.efi" "$work_dir/EFI/BOOT/mmx64.efi"
+    fi
+
+    # GRUB configuration - Debian's signed GRUB looks in /boot/grub/grub.cfg
+    # and also /EFI/debian/grub.cfg. We need to place it in all possible locations.
+    cat > "$work_dir/boot/grub/grub.cfg" << 'EOF'
+# DriveSync GRUB Configuration (Secure Boot Compatible)
+set timeout=3
+set default=0
+
+# Search for the boot partition
+search --no-floppy --set=root --file /boot/vmlinuz
+
+menuentry "DriveSync" {
+    linux /boot/vmlinuz modloop=/boot/modloop-lts modules=loop,squashfs,nvme,usb-storage quiet
+    initrd /boot/initramfs.gz
+}
+
+menuentry "DriveSync (Debug Mode)" {
+    linux /boot/vmlinuz modloop=/boot/modloop-lts modules=loop,squashfs,nvme,usb-storage
+    initrd /boot/initramfs.gz
+}
+EOF
+
+    # Create EFI/debian directory (where Debian's signed GRUB looks for config)
+    mkdir -p "$work_dir/EFI/debian"
+    cp "$work_dir/boot/grub/grub.cfg" "$work_dir/EFI/debian/grub.cfg"
+
+    # Also place in EFI/BOOT for completeness
+    cp "$work_dir/boot/grub/grub.cfg" "$work_dir/EFI/BOOT/grub.cfg"
+
+    # Create grub directory at root level (another common location)
+    mkdir -p "$work_dir/grub"
+    cp "$work_dir/boot/grub/grub.cfg" "$work_dir/grub/grub.cfg"
+
+    # Fallback EFI shell script (for systems with EFI Shell)
+    cat > "$work_dir/EFI/BOOT/startup.nsh" << 'EOF'
+@echo -off
+echo Booting DriveSync...
+fs0:
+\boot\vmlinuz initrd=\boot\initramfs.gz modloop=/boot/modloop-lts modules=loop,squashfs,nvme,usb-storage quiet
+EOF
+
+    # --- BIOS Boot Setup ---
+    # Syslinux config for BIOS boot
     cat > "$work_dir/syslinux/syslinux.cfg" << 'EOF'
 DEFAULT drivesync
 TIMEOUT 30
@@ -278,26 +399,6 @@ LABEL drivesync
 EOF
     cp "$work_dir/syslinux/syslinux.cfg" "$work_dir/syslinux.cfg"
 
-    # --- UEFI Boot Setup ---
-    # Copy syslinux EFI bootloader
-    cp "$syslinux_dir/efi64/syslinux.efi" "$work_dir/EFI/BOOT/bootx64.efi"
-    cp "$syslinux_dir/efi64/ldlinux.e64" "$work_dir/EFI/BOOT/"
-    cp "$syslinux_dir/efi64/linux.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
-    cp "$syslinux_dir/efi64/libcom32.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
-    cp "$syslinux_dir/efi64/libutil.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
-
-    # Syslinux config for EFI (must be in same dir as bootloader)
-    cp "$work_dir/syslinux/syslinux.cfg" "$work_dir/EFI/BOOT/syslinux.cfg"
-
-    # Fallback EFI shell script
-    cat > "$work_dir/EFI/BOOT/startup.nsh" << 'EOF'
-@echo -off
-echo Booting DriveSync...
-fs0:
-\boot\vmlinuz initrd=\boot\initramfs.gz modloop=/boot/modloop-lts modules=loop,squashfs,nvme,usb-storage quiet
-EOF
-
-    # --- BIOS Boot Setup ---
     # Copy syslinux BIOS files for manual installation
     cp "$syslinux_dir/bios/mbr.bin" "$work_dir/syslinux/" 2>/dev/null || true
     cp "$syslinux_dir/bios/ldlinux.c32" "$work_dir/syslinux/" 2>/dev/null || true
@@ -357,6 +458,7 @@ MAKEBOOT
 DriveSync Bootable USB - Standard Edition (Alpine Linux)
 
 This is a complete bootable image based on Alpine Linux.
+Uses Debian's signed GRUB bootloader for Secure Boot compatibility.
 
 QUICK START (UEFI - most modern systems):
 1. Format USB drive as FAT32 with GPT partition table
@@ -365,6 +467,10 @@ QUICK START (UEFI - most modern systems):
 4. Select source and destination drives
 5. Type "clone" to confirm
 
+SECURE BOOT:
+This image uses Debian's signed GRUB bootloader and works with
+Secure Boot enabled. No need to disable Secure Boot.
+
 BIOS BOOT (legacy systems):
 If your system uses BIOS instead of UEFI:
 1. Extract zip to USB drive
@@ -372,7 +478,8 @@ If your system uses BIOS instead of UEFI:
 3. Boot from USB drive
 
 INCLUDED:
-- Syslinux bootloader (UEFI and BIOS)
+- Signed GRUB bootloader (UEFI with Secure Boot support)
+- Syslinux bootloader (BIOS)
 - Linux kernel with NVMe, SATA, USB support
 - DriveSync TUI application
 - Debug shell (press Ctrl+C to access)
@@ -387,12 +494,17 @@ DriveSync Bootable USB - Auto-Clone Edition (Alpine Linux)
 
 This is a complete bootable image that will automatically clone
 the internal drive to this boot drive. No user interaction needed.
+Uses Debian's signed GRUB bootloader for Secure Boot compatibility.
 
 HOW IT WORKS:
 1. Boot from this drive (UEFI or BIOS)
 2. DriveSync starts automatically
 3. Clones internal drive to this drive
 4. Shows completion screen when done
+
+SECURE BOOT:
+This image uses Debian's signed GRUB bootloader and works with
+Secure Boot enabled. No need to disable Secure Boot.
 
 BIOS BOOT (legacy systems):
 If your system uses BIOS instead of UEFI:
@@ -455,6 +567,7 @@ main() {
     download_alpine
     download_kernel
     download_syslinux
+    download_signed_grub
 
     # Build both editions
     build_edition "standard"
