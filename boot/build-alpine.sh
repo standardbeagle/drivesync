@@ -102,6 +102,65 @@ download_kernel() {
     echo "$cache_dir"
 }
 
+download_syslinux() {
+    local cache_dir="$DIST_DIR/.alpine-cache"
+    local syslinux_dir="$cache_dir/syslinux"
+
+    if [ -d "$syslinux_dir" ]; then
+        info "Using cached syslinux bootloader"
+        echo "$syslinux_dir"
+        return
+    fi
+
+    info "Downloading syslinux bootloader..."
+    mkdir -p "$syslinux_dir"
+
+    # Find the correct syslinux package version
+    local pkg_list
+    pkg_list=$(curl -sL "${ALPINE_MIRROR}/v${ALPINE_VERSION}/main/${ALPINE_ARCH}/" | grep -o 'syslinux-[0-9][^"]*\.apk' | head -1)
+
+    if [ -z "$pkg_list" ]; then
+        # Fallback to v3.20 if v3.21 doesn't have it
+        pkg_list=$(curl -sL "${ALPINE_MIRROR}/v3.20/main/${ALPINE_ARCH}/" | grep -o 'syslinux-[0-9][^"]*\.apk' | head -1)
+        local syslinux_url="${ALPINE_MIRROR}/v3.20/main/${ALPINE_ARCH}/${pkg_list}"
+    else
+        local syslinux_url="${ALPINE_MIRROR}/v${ALPINE_VERSION}/main/${ALPINE_ARCH}/${pkg_list}"
+    fi
+
+    info "Downloading: $syslinux_url"
+
+    local tmp_dir="$cache_dir/syslinux-tmp"
+    mkdir -p "$tmp_dir"
+    curl -sL -o "$tmp_dir/syslinux.apk" "$syslinux_url" || error "Failed to download syslinux"
+
+    # Extract APK (it's a gzipped tarball)
+    cd "$tmp_dir"
+    tar -xzf syslinux.apk 2>/dev/null || true
+
+    # Copy EFI bootloader files
+    mkdir -p "$syslinux_dir/efi64"
+    cp usr/share/syslinux/efi64/syslinux.efi "$syslinux_dir/efi64/" 2>/dev/null || true
+    cp usr/share/syslinux/efi64/ldlinux.e64 "$syslinux_dir/efi64/" 2>/dev/null || true
+    cp usr/share/syslinux/efi64/linux.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
+    cp usr/share/syslinux/efi64/libcom32.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
+    cp usr/share/syslinux/efi64/libutil.c32 "$syslinux_dir/efi64/" 2>/dev/null || true
+
+    # Copy BIOS bootloader files
+    mkdir -p "$syslinux_dir/bios"
+    cp usr/share/syslinux/mbr.bin "$syslinux_dir/bios/" 2>/dev/null || true
+    cp usr/share/syslinux/isolinux.bin "$syslinux_dir/bios/" 2>/dev/null || true
+    cp usr/share/syslinux/ldlinux.c32 "$syslinux_dir/bios/" 2>/dev/null || true
+    cp usr/share/syslinux/linux.c32 "$syslinux_dir/bios/" 2>/dev/null || true
+    cp usr/share/syslinux/libcom32.c32 "$syslinux_dir/bios/" 2>/dev/null || true
+    cp usr/share/syslinux/libutil.c32 "$syslinux_dir/bios/" 2>/dev/null || true
+
+    # Cleanup
+    rm -rf "$tmp_dir"
+
+    info "Syslinux bootloader extracted"
+    echo "$syslinux_dir"
+}
+
 create_initramfs() {
     local work_dir="$1"
     local edition="$2"  # "standard" or "auto"
@@ -189,6 +248,7 @@ create_boot_structure() {
     local work_dir="$1"
     local edition="$2"
     local cache_dir="$DIST_DIR/.alpine-cache"
+    local syslinux_dir="$cache_dir/syslinux"
 
     info "Creating boot structure for $edition edition..."
 
@@ -204,7 +264,7 @@ create_boot_structure() {
     # Create initramfs with DriveSync
     create_initramfs "$work_dir" "$edition"
 
-    # SYSLINUX config for BIOS boot
+    # Syslinux config (shared between BIOS and UEFI)
     cat > "$work_dir/syslinux/syslinux.cfg" << 'EOF'
 DEFAULT drivesync
 TIMEOUT 30
@@ -218,12 +278,78 @@ LABEL drivesync
 EOF
     cp "$work_dir/syslinux/syslinux.cfg" "$work_dir/syslinux.cfg"
 
-    # EFI boot config
+    # --- UEFI Boot Setup ---
+    # Copy syslinux EFI bootloader
+    cp "$syslinux_dir/efi64/syslinux.efi" "$work_dir/EFI/BOOT/bootx64.efi"
+    cp "$syslinux_dir/efi64/ldlinux.e64" "$work_dir/EFI/BOOT/"
+    cp "$syslinux_dir/efi64/linux.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
+    cp "$syslinux_dir/efi64/libcom32.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
+    cp "$syslinux_dir/efi64/libutil.c32" "$work_dir/EFI/BOOT/" 2>/dev/null || true
+
+    # Syslinux config for EFI (must be in same dir as bootloader)
+    cp "$work_dir/syslinux/syslinux.cfg" "$work_dir/EFI/BOOT/syslinux.cfg"
+
+    # Fallback EFI shell script
     cat > "$work_dir/EFI/BOOT/startup.nsh" << 'EOF'
 @echo -off
+echo Booting DriveSync...
 fs0:
 \boot\vmlinuz initrd=\boot\initramfs.gz modloop=/boot/modloop-lts modules=loop,squashfs,nvme,usb-storage quiet
 EOF
+
+    # --- BIOS Boot Setup ---
+    # Copy syslinux BIOS files for manual installation
+    cp "$syslinux_dir/bios/mbr.bin" "$work_dir/syslinux/" 2>/dev/null || true
+    cp "$syslinux_dir/bios/ldlinux.c32" "$work_dir/syslinux/" 2>/dev/null || true
+    cp "$syslinux_dir/bios/linux.c32" "$work_dir/syslinux/" 2>/dev/null || true
+    cp "$syslinux_dir/bios/libcom32.c32" "$work_dir/syslinux/" 2>/dev/null || true
+    cp "$syslinux_dir/bios/libutil.c32" "$work_dir/syslinux/" 2>/dev/null || true
+
+    # Create makeboot script for BIOS systems
+    cat > "$work_dir/makeboot.sh" << 'MAKEBOOT'
+#!/bin/bash
+# DriveSync BIOS Boot Setup
+# Run this script to make a USB drive bootable on BIOS systems
+# Usage: sudo ./makeboot.sh /dev/sdX
+
+set -e
+
+if [ -z "$1" ]; then
+    echo "Usage: sudo $0 /dev/sdX"
+    echo "  where /dev/sdX is your USB drive (NOT a partition)"
+    exit 1
+fi
+
+DEVICE="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ ! -b "$DEVICE" ]; then
+    echo "Error: $DEVICE is not a block device"
+    exit 1
+fi
+
+if [ "$(id -u)" != "0" ]; then
+    echo "Error: This script must be run as root"
+    exit 1
+fi
+
+echo "Installing MBR to $DEVICE..."
+cat "$SCRIPT_DIR/syslinux/mbr.bin" > "$DEVICE"
+
+# Find the first partition
+PARTITION="${DEVICE}1"
+if [ ! -b "$PARTITION" ]; then
+    PARTITION="${DEVICE}p1"
+fi
+
+if [ -b "$PARTITION" ]; then
+    echo "Installing syslinux to $PARTITION..."
+    syslinux --install "$PARTITION" || extlinux --install "$SCRIPT_DIR/syslinux"
+fi
+
+echo "Done! Drive should now be bootable on BIOS systems."
+MAKEBOOT
+    chmod +x "$work_dir/makeboot.sh"
 
     # Create edition-specific README
     if [ "$edition" = "standard" ]; then
@@ -232,14 +358,21 @@ DriveSync Bootable USB - Standard Edition (Alpine Linux)
 
 This is a complete bootable image based on Alpine Linux.
 
-QUICK START:
+QUICK START (UEFI - most modern systems):
 1. Format USB drive as FAT32 with GPT partition table
 2. Extract this zip to the USB drive root
-3. Boot from USB drive
+3. Boot from USB drive (select UEFI boot option)
 4. Select source and destination drives
 5. Type "clone" to confirm
 
+BIOS BOOT (legacy systems):
+If your system uses BIOS instead of UEFI:
+1. Extract zip to USB drive
+2. Run: sudo ./makeboot.sh /dev/sdX (replace sdX with your USB device)
+3. Boot from USB drive
+
 INCLUDED:
+- Syslinux bootloader (UEFI and BIOS)
 - Linux kernel with NVMe, SATA, USB support
 - DriveSync TUI application
 - Debug shell (press Ctrl+C to access)
@@ -256,10 +389,16 @@ This is a complete bootable image that will automatically clone
 the internal drive to this boot drive. No user interaction needed.
 
 HOW IT WORKS:
-1. Boot from this drive
+1. Boot from this drive (UEFI or BIOS)
 2. DriveSync starts automatically
 3. Clones internal drive to this drive
 4. Shows completion screen when done
+
+BIOS BOOT (legacy systems):
+If your system uses BIOS instead of UEFI:
+1. Extract zip to USB drive
+2. Run: sudo ./makeboot.sh /dev/sdX (replace sdX with your USB device)
+3. Boot from USB drive
 
 CONFIGURATION:
 Edit drivesync.kdl on this drive to customize:
@@ -315,6 +454,7 @@ main() {
     # Download Alpine components (cached)
     download_alpine
     download_kernel
+    download_syslinux
 
     # Build both editions
     build_edition "standard"
@@ -322,10 +462,13 @@ main() {
 
     echo ""
     info "Build complete!"
-    info "Created: dist/drivesync-usb.zip (standard, ~50MB)"
-    info "Created: dist/drivesync-usb-auto.zip (auto-clone, ~50MB)"
+    info "Created: dist/drivesync-usb.zip (standard)"
+    info "Created: dist/drivesync-usb-auto.zip (auto-clone)"
     echo ""
-    echo "These are complete bootable images. Extract to a FAT32 USB drive and boot."
+    echo "These are complete bootable images with UEFI and BIOS support."
+    echo "Extract to a FAT32 USB drive and boot."
+    echo ""
+    echo "For BIOS systems, run makeboot.sh after extracting."
 }
 
 main "$@"
