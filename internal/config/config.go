@@ -186,6 +186,19 @@ func Parse(data []byte) (*Config, error) {
 			} else {
 				cfg.DirectIO = true
 			}
+
+		case "auto-start":
+			// Shorthand: auto-start true sets mode to auto with auto-detection
+			if len(node.Arguments) > 0 && toBool(node.Arguments[0].Value) {
+				cfg.Mode = ModeAuto
+				// Source and Destination left nil = use auto-detection
+			}
+
+		case "shutdown-on-complete":
+			// Shorthand for on-complete "shutdown"
+			if len(node.Arguments) > 0 && toBool(node.Arguments[0].Value) {
+				cfg.OnComplete = OnCompleteShutdown
+			}
 		}
 	}
 

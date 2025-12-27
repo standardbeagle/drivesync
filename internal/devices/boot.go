@@ -49,7 +49,7 @@ func DetectBootContext(disks []*Disk) (*BootContext, error) {
 			continue
 		}
 
-		if hasWindowsInstallation(disk) {
+		if HasWindowsInstallation(disk) {
 			ctx.InternalDrive = disk
 			ctx.CanSelfOverwrite = true
 			break
@@ -61,22 +61,87 @@ func DetectBootContext(disks []*Disk) (*BootContext, error) {
 
 // findBootDevice determines which device we booted from.
 func findBootDevice() (string, error) {
-	// Method 1: Check EFI system partition mount
+	// Method 1: Check live-boot medium mount (Debian Live, etc.)
+	// This is the most reliable for live USB systems
+	for _, livePath := range []string{
+		"/run/live/medium",
+		"/lib/live/mount/medium",
+		"/cdrom",
+		"/live/medium",
+	} {
+		if dev := findMountDevice(livePath); dev != "" {
+			return getParentDevice(dev), nil
+		}
+	}
+
+	// Method 2: Check for stored boot device (set by initramfs hook)
+	if data, err := os.ReadFile("/run/live/boot-device"); err == nil {
+		dev := strings.TrimSpace(string(data))
+		if dev != "" {
+			return dev, nil
+		}
+	}
+
+	// Method 3: Scan USB drives for drivesync.kdl marker
+	// This works even if the medium was unmounted (toram mode)
+	if dev := findDriveWithMarker(); dev != "" {
+		return dev, nil
+	}
+
+	// Method 4: Check EFI system partition mount
 	if efiDev := findEFIMountDevice(); efiDev != "" {
 		return getParentDevice(efiDev), nil
 	}
 
-	// Method 2: Parse /proc/cmdline for root device
+	// Method 5: Parse /proc/cmdline for root device
 	if rootDev := parseRootFromCmdline(); rootDev != "" {
 		return getParentDevice(rootDev), nil
 	}
 
-	// Method 3: Check /boot mount point
+	// Method 6: Check /boot mount point
 	if bootDev := findMountDevice("/boot"); bootDev != "" {
 		return getParentDevice(bootDev), nil
 	}
 
 	return "", nil
+}
+
+// findDriveWithMarker scans mounted filesystems for drivesync marker files.
+func findDriveWithMarker() string {
+	// Read all mounts
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		dev := fields[0]
+		mountPoint := fields[1]
+
+		// Skip non-device mounts
+		if !strings.HasPrefix(dev, "/dev/") {
+			continue
+		}
+
+		// Check for our marker files
+		markers := []string{
+			filepath.Join(mountPoint, "drivesync.kdl"),
+			filepath.Join(mountPoint, ".disk", "info"),
+			filepath.Join(mountPoint, "live", "filesystem.squashfs"),
+		}
+
+		for _, marker := range markers {
+			if _, err := os.Stat(marker); err == nil {
+				return getParentDevice(dev)
+			}
+		}
+	}
+
+	return ""
 }
 
 // findEFIMountDevice finds the device mounted at /boot/efi or /efi.
@@ -192,8 +257,8 @@ func getParentDevice(partPath string) string {
 	return partPath
 }
 
-// hasWindowsInstallation checks if a disk has a Windows installation.
-func hasWindowsInstallation(disk *Disk) bool {
+// HasWindowsInstallation checks if a disk has a Windows installation.
+func HasWindowsInstallation(disk *Disk) bool {
 	// Check partitions for Windows indicators
 	hasEFI := false
 	hasNTFS := false

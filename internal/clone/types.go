@@ -108,22 +108,9 @@ func AnalyzeWithEncryption(srcSize, dstSize, srcLastUsed int64, hasEncryption bo
 		a.CloneBytes = srcSize
 		a.NeedsGPTFixup = false
 		a.UnallocatedTail = dstSize - srcSize
-	} else if hasEncryption {
-		// Destination smaller AND source has encryption - cannot safely truncate
-		a.CanClone = false
-		a.ErrorMessage = "Destination too small for encrypted source"
-		a.ErrorDetails = `The source drive contains BitLocker or other encrypted volumes.
-Encrypted volumes cannot be truncated - the entire disk must be cloned.
-
-OPTIONS:
-1. Use a larger destination drive (>= source size)
-2. In Windows, shrink the main partition before cloning:
-   - Open Settings > System > Storage > Disks & volumes
-   - Select your main partition > Properties > Change size
-   - Or: diskmgmt.msc > Right-click volume > Shrink Volume
-3. Disable BitLocker, shrink partition, re-enable BitLocker`
 	} else if srcLastUsed > 0 && dstSize >= srcLastUsed {
-		// Destination is smaller but used data fits (no encryption)
+		// Destination is smaller but used data fits
+		// This works even with encryption IF the partition was shrunk first
 		a.CanClone = true
 		a.CloneBytes = srcLastUsed
 		a.NeedsGPTFixup = true
@@ -132,22 +119,44 @@ OPTIONS:
 		// Destination too small for used data
 		a.CanClone = false
 		a.ErrorMessage = "Destination too small for source data"
-		a.ErrorDetails = `The destination drive is smaller than the used space on source.
+		if hasEncryption {
+			a.ErrorDetails = `The destination drive is smaller than the used space on source.
+The source has encrypted (BitLocker) volumes.
+
+OPTIONS:
+1. Use a larger destination drive
+2. Shrink the encrypted partition in Windows first:
+   - Open Settings > System > Storage > Disks & volumes
+   - Select your main partition > Properties > Change size
+   - Or: diskmgmt.msc > Right-click volume > Shrink Volume`
+		} else {
+			a.ErrorDetails = `The destination drive is smaller than the used space on source.
 
 OPTIONS:
 1. Use a larger destination drive
 2. Delete unnecessary files from source
 3. Shrink the source partition in Windows Disk Management`
+		}
 	} else {
-		// No GPT info, can't safely clone to smaller disk
+		// No partition info, can't determine if data fits
 		a.CanClone = false
-		a.ErrorMessage = "Cannot clone to smaller destination"
-		a.ErrorDetails = `The destination is smaller than the source and we cannot
+		if hasEncryption {
+			a.ErrorMessage = "Cannot verify encrypted source fits on destination"
+			a.ErrorDetails = `The source has encrypted volumes and destination is smaller.
+Unable to determine partition layout to verify data fits.
+
+OPTIONS:
+1. Use a destination drive >= source size
+2. Shrink the encrypted partition in Windows first`
+		} else {
+			a.ErrorMessage = "Cannot clone to smaller destination"
+			a.ErrorDetails = `The destination is smaller than the source and we cannot
 determine how much space is actually used on the source.
 
 OPTIONS:
 1. Use a destination drive >= source size
 2. This is the safest option for system drives`
+		}
 	}
 
 	return a

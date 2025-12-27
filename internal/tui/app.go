@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,7 @@ import (
 	"github.com/standardbeagle/drivesync/internal/clone"
 	"github.com/standardbeagle/drivesync/internal/config"
 	"github.com/standardbeagle/drivesync/internal/devices"
+	"github.com/standardbeagle/drivesync/internal/vss"
 )
 
 // Screen represents the current screen in the TUI.
@@ -17,6 +19,7 @@ type Screen int
 
 const (
 	ScreenLoading Screen = iota
+	ScreenStart           // Start screen with auto-detection
 	ScreenSelfOverwrite   // Pre-configured self-overwrite mode
 	ScreenSelectSource
 	ScreenSelectDest
@@ -26,6 +29,12 @@ const (
 	ScreenComplete
 	ScreenError
 )
+
+// vssSnapshot wraps a VSS snapshot with its original path.
+type vssSnapshot struct {
+	snapshot     *vss.Snapshot
+	originalPath string
+}
 
 // Model is the main Bubble Tea model.
 type Model struct {
@@ -41,6 +50,10 @@ type Model struct {
 	destDisk   *devices.Disk
 	analysis   *clone.SizeAnalysis
 
+	// Auto-detection results
+	autoDetected      *devices.MatchResult
+	autoDetectAttempt bool
+
 	// Progress
 	progress     clone.Progress
 	cloneResult  *clone.Result
@@ -52,6 +65,9 @@ type Model struct {
 	// Self-overwrite mode
 	selfOverwrite bool
 	bootDevice    *devices.Disk
+
+	// VSS snapshot (Windows only)
+	vssSnapshot *vssSnapshot
 
 	// Error
 	errorMsg string
@@ -165,28 +181,34 @@ func (m Model) processConfig() (tea.Model, tea.Cmd) {
 		m.bootDevice = ctx.BootDevice
 	}
 
-	// If config has pre-configured drives, try to match them
-	if m.config.IsPreConfigured() {
-		srcSpec := &devices.DriveSpec{
+	// Build drive specs from config (may be nil for auto-detection)
+	var srcSpec, dstSpec *devices.DriveSpec
+	if m.config.Source != nil {
+		srcSpec = &devices.DriveSpec{
 			Type:  m.config.Source.Type,
 			Value: m.config.Source.Value,
 		}
-		dstSpec := &devices.DriveSpec{
+	}
+	if m.config.Destination != nil {
+		dstSpec = &devices.DriveSpec{
 			Type:  m.config.Destination.Type,
 			Value: m.config.Destination.Value,
 		}
+	}
 
-		result, _ := devices.MatchDrivesFromConfig(m.disks, srcSpec, dstSpec)
+	// Match drives (uses auto-detection if specs are nil)
+	result, _ := devices.MatchDrivesFromConfig(m.disks, srcSpec, dstSpec)
 
-		if result.Error != "" {
-			m.screen = ScreenError
-			m.errorMsg = result.Error
-			return m, nil
-		}
-
+	// If auto-detection succeeded or config matched drives
+	if result.Source != nil && result.Destination != nil && result.Error == "" {
 		m.sourceDisk = result.Source
 		m.destDisk = result.Destination
-		m.selfOverwrite = m.config.IsSelfOverwrite()
+		m.bootDevice = result.BootDevice
+
+		// Check if this is self-overwrite mode
+		if m.bootDevice != nil && m.destDisk.Path == m.bootDevice.Path {
+			m.selfOverwrite = true
+		}
 
 		// Analyze size
 		m.analyzeSize()
@@ -200,8 +222,14 @@ func (m Model) processConfig() (tea.Model, tea.Cmd) {
 		// Handle different modes
 		switch m.config.Mode {
 		case config.ModeAuto:
-			m.screen = ScreenProgress
-			return m, func() tea.Msg { return autoStartMsg{} }
+			// Auto mode with high confidence - proceed automatically
+			if result.Confidence == "high" || !result.AutoDetected {
+				m.screen = ScreenProgress
+				return m, func() tea.Msg { return autoStartMsg{} }
+			}
+			// Lower confidence - show confirmation first
+			m.screen = ScreenSelfOverwrite
+			return m, nil
 
 		case config.ModeConfirm:
 			m.screen = ScreenSelfOverwrite
@@ -211,6 +239,15 @@ func (m Model) processConfig() (tea.Model, tea.Cmd) {
 			m.screen = ScreenSelfOverwrite
 			return m, nil
 		}
+	}
+
+	// If we have an error from matching, check if we should fall back to interactive
+	if result.Error != "" && m.config.Mode != config.ModeAuto {
+		// For non-auto modes, fall through to interactive selection
+	} else if result.Error != "" {
+		m.screen = ScreenError
+		m.errorMsg = result.Error
+		return m, nil
 	}
 
 	// No pre-configured drives, check for self-overwrite detection
@@ -230,8 +267,10 @@ func (m Model) processConfig() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Standard interactive mode
-	m.screen = ScreenSelectSource
+	// Standard interactive mode - try auto-detection first
+	m.autoDetected = devices.AutoDetectDrives(m.disks)
+	m.autoDetectAttempt = true
+	m.screen = ScreenStart
 	return m, nil
 }
 
@@ -242,6 +281,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen != ScreenProgress {
 			m.quitting = true
 			return m, tea.Quit
+		}
+		return m, nil
+
+	case "s", "S":
+		// Manual source selection from start screen
+		if m.screen == ScreenStart {
+			m.screen = ScreenSelectSource
+			m.cursor = 0
+		}
+		return m, nil
+
+	case "d", "D":
+		// Manual destination selection from start screen
+		if m.screen == ScreenStart {
+			m.screen = ScreenSelectDest
+			m.cursor = 0
 		}
 		return m, nil
 
@@ -311,6 +366,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleEnter processes Enter key presses.
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	switch m.screen {
+	case ScreenStart:
+		// Use auto-detected drives if available
+		if m.autoDetected != nil && m.autoDetected.Source != nil && m.autoDetected.Destination != nil {
+			m.sourceDisk = m.autoDetected.Source
+			m.destDisk = m.autoDetected.Destination
+			m.analyzeSize()
+			if m.analysis.CanClone {
+				if m.analysis.NeedsGPTFixup {
+					m.screen = ScreenSizeAnalysis
+				} else {
+					m.screen = ScreenConfirm
+				}
+			} else {
+				m.screen = ScreenError
+				m.errorMsg = m.analysis.ErrorMessage
+			}
+		} else {
+			// No auto-detection, go to manual selection
+			m.screen = ScreenSelectSource
+			m.cursor = 0
+		}
+
 	case ScreenSelfOverwrite:
 		// Start clone from self-overwrite screen
 		return m.startClone()
@@ -393,8 +470,8 @@ func (m *Model) analyzeSize() {
 	srcSize := m.sourceDisk.SizeBytes
 	dstSize := m.destDisk.SizeBytes
 
-	// TODO: Get last used LBA from GPT
-	srcLastUsed := int64(0)
+	// Get last used byte from partition info
+	srcLastUsed := m.sourceDisk.LastUsedByte()
 
 	// Check for encrypted partitions on source
 	hasEncryption := devices.HasEncryptedPartitions(m.sourceDisk)
@@ -431,7 +508,28 @@ func (m Model) runClone() tea.Cmd {
 			opts.DirectIO = m.config.DirectIO
 		}
 
-		result, err := clone.Clone(m.sourceDisk.Path, m.destDisk.Path, opts, m.progressChan)
+		// Determine source path (use VSS snapshot on Windows if available)
+		sourcePath := m.sourceDisk.Path
+		var snapshot *vss.Snapshot
+
+		// Create VSS snapshot on Windows for live system cloning
+		if runtime.GOOS == "windows" && shouldUseVSS(m.sourceDisk) {
+			// Determine volume path from disk path
+			volumePath, err := getVolumePathFromDisk(m.sourceDisk.Path)
+			if err == nil {
+				snapshot, err = vss.CreateSnapshot(volumePath)
+				if err == nil {
+					defer snapshot.Delete()
+					// Wait for snapshot to be ready
+					if err := snapshot.WaitForSnapshot(30 * time.Second); err == nil {
+						sourcePath = snapshot.DevicePath
+					}
+				}
+			}
+			// If VSS fails, fall back to direct clone (may fail on locked files)
+		}
+
+		result, err := clone.Clone(sourcePath, m.destDisk.Path, opts, m.progressChan)
 		close(m.progressChan)
 
 		return cloneCompleteMsg{result: result, err: err}
@@ -497,6 +595,8 @@ func (m Model) View() string {
 	switch m.screen {
 	case ScreenLoading:
 		content = m.viewLoading()
+	case ScreenStart:
+		content = m.viewStart()
 	case ScreenSelfOverwrite:
 		content = m.viewSelfOverwrite()
 	case ScreenSelectSource:
@@ -525,6 +625,66 @@ func (m Model) viewLoading() string {
 	title := m.styles.WindowTitle.Render("DriveSync")
 	content := "\n\n  Detecting drives...\n"
 	return title + content
+}
+
+// viewStart renders the start screen with auto-detection.
+func (m Model) viewStart() string {
+	title := m.styles.WindowTitle.Render("DriveSync - Disk Cloning Tool")
+	var content string
+
+	content += "\n"
+
+	// Show auto-detection results if available
+	if m.autoDetected != nil && m.autoDetected.Source != nil && m.autoDetected.Destination != nil {
+		content += m.styles.Success.Render("  Auto-detected:") + "\n\n"
+
+		// Source drive
+		content += "  " + m.styles.DriveName.Render("Source:") + " "
+		content += m.formatDiskOneLine(m.autoDetected.Source) + "\n"
+
+		// Destination drive
+		content += "  " + m.styles.DriveName.Render("Destination:") + " "
+		content += m.formatDiskOneLine(m.autoDetected.Destination) + "\n"
+
+		// Confidence level
+		if m.autoDetected.Confidence != "" {
+			confidenceColor := m.styles.Success
+			if m.autoDetected.Confidence == "medium" {
+				confidenceColor = m.styles.Warning
+			} else if m.autoDetected.Confidence == "low" {
+				confidenceColor = m.styles.Error
+			}
+			content += "\n  " + m.styles.DriveInfo.Render("Confidence:") + " "
+			content += confidenceColor.Render(m.autoDetected.Confidence) + "\n"
+		}
+
+		content += "\n"
+		content += m.styles.Success.Render("  [Enter]") + "  Start automatic clone\n"
+		content += m.styles.DriveInfo.Render("  [S]") + "      Select source manually\n"
+		content += m.styles.DriveInfo.Render("  [D]") + "      Select destination manually\n"
+		content += m.styles.DriveInfo.Render("  [Q]") + "      Quit\n"
+	} else {
+		// No auto-detection possible
+		content += m.styles.Warning.Render("  No drives auto-detected") + "\n\n"
+		content += "  " + m.styles.DriveInfo.Render("Please select drives manually:") + "\n\n"
+		content += m.styles.DriveName.Render("  [S]") + "  Select source drive\n"
+		content += m.styles.DriveName.Render("  [D]") + "  Select destination drive\n"
+		content += m.styles.DriveInfo.Render("  [Q]") + "  Quit\n"
+	}
+
+	return title + content
+}
+
+// formatDiskOneLine formats disk info for single-line display.
+func (m Model) formatDiskOneLine(disk *devices.Disk) string {
+	if disk == nil {
+		return "None"
+	}
+
+	name := disk.DisplayName()
+	size := fmt.Sprintf("%.1f GB", disk.SizeGB())
+
+	return fmt.Sprintf("%s (%s)", name, size)
 }
 
 // viewSelfOverwrite renders the self-overwrite confirmation screen.
@@ -854,6 +1014,37 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
 	}
 	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// shouldUseVSS determines if VSS should be used for the source disk.
+// VSS is only used on Windows, and only for system drives (C:\) to avoid
+// file-in-use errors.
+func shouldUseVSS(disk *devices.Disk) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	// Use VSS if the disk contains Windows installation
+	// This avoids "file in use" errors when cloning the system drive
+	return devices.HasWindowsInstallation(disk)
+}
+
+// getVolumePathFromDisk extracts a volume path from a PhysicalDrive path.
+// For example, \\.\PhysicalDrive0 -> C:\
+// This is a simplified version that attempts to find the first volume on the disk.
+func getVolumePathFromDisk(diskPath string) (string, error) {
+	// On Windows, we need to find which volume corresponds to this physical drive
+	// For system drives, we'll default to C:\ as it's the most common case
+	// A more robust implementation would enumerate volumes and match to physical drives
+
+	// For now, assume C:\ for PhysicalDrive0 (system drive)
+	// This works for the common case of cloning the Windows system drive
+	if diskPath == "\\\\.\\PhysicalDrive0" || diskPath == "\\\\?\\PhysicalDrive0" {
+		return "C:\\", nil
+	}
+
+	// For other drives, we could use vss.GetPhysicalDriveForVolume
+	// but for now return an error to fall back to direct clone
+	return "", fmt.Errorf("cannot determine volume path for %s", diskPath)
 }
 
 // Run starts the TUI application with default configuration.

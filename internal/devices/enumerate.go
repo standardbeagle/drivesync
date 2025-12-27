@@ -4,7 +4,9 @@ package devices
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -120,6 +122,9 @@ func parseDisk(sysfsPath, name string) (*Disk, error) {
 	disk.Model = strings.TrimSpace(disk.Model)
 	disk.Vendor = strings.TrimSpace(disk.Vendor)
 
+	// Enumerate partitions
+	disk.Partitions = enumeratePartitions(disk.Path, sysfsPath, name, disk.SectorSize)
+
 	return disk, nil
 }
 
@@ -175,4 +180,165 @@ func readSysfsFile(basePath, relPath string) (string, error) {
 func readSysfsFileOrEmpty(basePath, relPath string) string {
 	content, _ := readSysfsFile(basePath, relPath)
 	return content
+}
+
+// enumeratePartitions discovers partitions for a disk using sgdisk.
+func enumeratePartitions(devPath, sysfsPath, diskName string, sectorSize int) []*Partition {
+	// Try sgdisk first for GPT partition info
+	partitions := parseGPTPartitions(devPath, diskName, sectorSize)
+	if len(partitions) > 0 {
+		return partitions
+	}
+
+	// Fallback: enumerate from sysfs (won't have LBA info, but will find partitions)
+	return enumeratePartitionsFromSysfs(sysfsPath, diskName, sectorSize)
+}
+
+// parseGPTPartitions uses sgdisk to get GPT partition info.
+func parseGPTPartitions(devPath, diskName string, sectorSize int) []*Partition {
+	// Run sgdisk -p to get partition info
+	cmd := exec.Command("sgdisk", "-p", devPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var partitions []*Partition
+	lines := strings.Split(string(output), "\n")
+
+	// Parse partition lines - format:
+	// Number  Start (sector)    End (sector)  Size       Code  Name
+	//    1            2048          206847   100.0 MiB   EF00  EFI system partition
+	partRegex := regexp.MustCompile(`^\s*(\d+)\s+(\d+)\s+(\d+)\s+[\d.]+\s+\S+\s+\S+\s+(.*)$`)
+
+	for _, line := range lines {
+		matches := partRegex.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+
+		partNum, _ := strconv.Atoi(matches[1])
+		startLBA, _ := strconv.ParseInt(matches[2], 10, 64)
+		endLBA, _ := strconv.ParseInt(matches[3], 10, 64)
+		label := strings.TrimSpace(matches[4])
+
+		// Construct partition device path
+		partPath := partitionDevicePath(diskName, partNum)
+
+		// Calculate size
+		sectorSz := int64(sectorSize)
+		if sectorSz == 0 {
+			sectorSz = 512
+		}
+		sizeBytes := (endLBA - startLBA + 1) * sectorSz
+
+		part := &Partition{
+			Path:      partPath,
+			Name:      strings.TrimPrefix(partPath, "/dev/"),
+			Number:    partNum,
+			StartLBA:  startLBA,
+			EndLBA:    endLBA,
+			SizeBytes: sizeBytes,
+			Label:     label,
+		}
+
+		// Get filesystem info via blkid
+		blkidInfo := GetBlkidInfo(partPath)
+		part.FSType = blkidInfo.FSType
+		part.FSLabel = blkidInfo.Label
+		part.FSUUID = blkidInfo.UUID
+		part.TypeGUID = blkidInfo.PartTypeGUID
+		if part.TypeGUID != "" {
+			part.TypeName = TypeGUIDToName(part.TypeGUID)
+		}
+
+		partitions = append(partitions, part)
+	}
+
+	return partitions
+}
+
+// enumeratePartitionsFromSysfs finds partitions from sysfs without LBA info.
+func enumeratePartitionsFromSysfs(sysfsPath, diskName string, sectorSize int) []*Partition {
+	entries, err := os.ReadDir(sysfsPath)
+	if err != nil {
+		return nil
+	}
+
+	var partitions []*Partition
+	for _, entry := range entries {
+		name := entry.Name()
+		// Partition directories start with the disk name
+		if !strings.HasPrefix(name, diskName) {
+			continue
+		}
+		// Must have a partition number suffix
+		suffix := strings.TrimPrefix(name, diskName)
+		// Handle nvme (nvme0n1p1) vs sda (sda1)
+		suffix = strings.TrimPrefix(suffix, "p")
+		if suffix == "" {
+			continue
+		}
+		partNum, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+
+		partPath := filepath.Join(sysfsPath, name)
+		devPath := "/dev/" + name
+
+		// Read partition size
+		var sizeBytes int64
+		if sizeStr, err := readSysfsFile(partPath, "size"); err == nil {
+			if sectors, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+				sizeBytes = sectors * 512
+			}
+		}
+
+		// Read start sector
+		var startLBA int64
+		if startStr, err := readSysfsFile(partPath, "start"); err == nil {
+			startLBA, _ = strconv.ParseInt(startStr, 10, 64)
+		}
+
+		// Calculate end LBA from start and size
+		sectorSz := int64(sectorSize)
+		if sectorSz == 0 {
+			sectorSz = 512
+		}
+		endLBA := startLBA + (sizeBytes / sectorSz) - 1
+
+		part := &Partition{
+			Path:      devPath,
+			Name:      name,
+			Number:    partNum,
+			StartLBA:  startLBA,
+			EndLBA:    endLBA,
+			SizeBytes: sizeBytes,
+		}
+
+		// Get filesystem info via blkid
+		blkidInfo := GetBlkidInfo(devPath)
+		part.FSType = blkidInfo.FSType
+		part.FSLabel = blkidInfo.Label
+		part.FSUUID = blkidInfo.UUID
+		part.TypeGUID = blkidInfo.PartTypeGUID
+		if part.TypeGUID != "" {
+			part.TypeName = TypeGUIDToName(part.TypeGUID)
+		}
+
+		partitions = append(partitions, part)
+	}
+
+	return partitions
+}
+
+// partitionDevicePath returns the device path for a partition.
+func partitionDevicePath(diskName string, partNum int) string {
+	// NVMe and MMC use "p" separator: nvme0n1p1, mmcblk0p1
+	if strings.HasPrefix(diskName, "nvme") || strings.HasPrefix(diskName, "mmcblk") {
+		return "/dev/" + diskName + "p" + strconv.Itoa(partNum)
+	}
+	// SATA/USB use no separator: sda1, sdb1
+	return "/dev/" + diskName + strconv.Itoa(partNum)
 }

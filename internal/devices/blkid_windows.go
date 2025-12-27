@@ -5,9 +5,10 @@ package devices
 // BlkidInfo contains filesystem information.
 // On Windows, this is populated via WMI instead of blkid.
 type BlkidInfo struct {
-	FSType string
-	Label  string
-	UUID   string
+	FSType       string
+	Label        string
+	UUID         string
+	PartTypeGUID string // GPT partition type GUID
 }
 
 // GetBlkidInfo is a stub on Windows - WMI is used instead.

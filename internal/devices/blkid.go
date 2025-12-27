@@ -10,9 +10,10 @@ import (
 
 // BlkidInfo contains filesystem information from blkid.
 type BlkidInfo struct {
-	FSType string
-	Label  string
-	UUID   string
+	FSType       string
+	Label        string
+	UUID         string
+	PartTypeGUID string // GPT partition type GUID
 }
 
 // GetBlkidInfo runs blkid on a device and parses the output.
@@ -50,6 +51,8 @@ func GetBlkidInfo(devicePath string) BlkidInfo {
 			info.Label = value
 		case "UUID":
 			info.UUID = value
+		case "PART_ENTRY_TYPE":
+			info.PartTypeGUID = strings.ToUpper(value)
 		}
 	}
 

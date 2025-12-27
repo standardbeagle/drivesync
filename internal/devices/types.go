@@ -59,6 +59,32 @@ func (d *Disk) DisplayName() string {
 	return name
 }
 
+// LastUsedByte returns the last used byte on the disk based on partition info.
+// This is the end of the last partition, useful for determining if data fits on smaller drive.
+func (d *Disk) LastUsedByte() int64 {
+	if len(d.Partitions) == 0 {
+		return 0
+	}
+
+	var maxEnd int64
+	sectorSize := int64(d.SectorSize)
+	if sectorSize == 0 {
+		sectorSize = 512 // Default sector size
+	}
+
+	for _, p := range d.Partitions {
+		endByte := (p.EndLBA + 1) * sectorSize // EndLBA is inclusive, so +1
+		if endByte > maxEnd {
+			maxEnd = endByte
+		}
+	}
+
+	// Add some buffer for GPT backup (typically 33 sectors at end)
+	maxEnd += 33 * sectorSize
+
+	return maxEnd
+}
+
 // Partition represents a partition on a disk.
 type Partition struct {
 	Path       string // /dev/sda1, /dev/nvme0n1p1

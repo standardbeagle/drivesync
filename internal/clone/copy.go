@@ -3,42 +3,24 @@ package clone
 import (
 	"fmt"
 	"io"
-	"os"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"unsafe"
 )
 
 // Clone copies data from source to destination with progress reporting.
 func Clone(srcPath, dstPath string, opts Options, progress chan<- Progress) (*Result, error) {
-	// Open source
-	srcFlags := os.O_RDONLY
-	if opts.DirectIO {
-		srcFlags |= syscall.O_DIRECT
-	}
-	src, err := os.OpenFile(srcPath, srcFlags, 0)
+	// Open source with platform-specific direct I/O handling
+	src, err := openForRead(srcPath, opts.DirectIO)
 	if err != nil {
-		// Retry without O_DIRECT if it fails
-		src, err = os.Open(srcPath)
-		if err != nil {
-			return nil, fmt.Errorf("open source: %w", err)
-		}
+		return nil, fmt.Errorf("open source: %w", err)
 	}
 	defer src.Close()
 
-	// Open destination
-	dstFlags := os.O_WRONLY
-	if opts.DirectIO {
-		dstFlags |= syscall.O_DIRECT
-	}
-	dst, err := os.OpenFile(dstPath, dstFlags, 0)
+	// Open destination with platform-specific direct I/O handling
+	dst, err := openForWrite(dstPath, opts.DirectIO)
 	if err != nil {
-		// Retry without O_DIRECT if it fails
-		dst, err = os.OpenFile(dstPath, os.O_WRONLY, 0)
-		if err != nil {
-			return nil, fmt.Errorf("open destination: %w", err)
-		}
+		return nil, fmt.Errorf("open destination: %w", err)
 	}
 	defer dst.Close()
 

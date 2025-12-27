@@ -46,6 +46,7 @@ const (
 	OPEN_EXISTING = 3
 
 	IOCTL_DISK_GET_DRIVE_GEOMETRY_EX = 0x000700A0
+	IOCTL_DISK_GET_DRIVE_LAYOUT_EX   = 0x00070050
 	IOCTL_STORAGE_GET_DEVICE_NUMBER  = 0x002D1080
 	IOCTL_STORAGE_QUERY_PROPERTY     = 0x002D1400
 
@@ -109,6 +110,31 @@ type STORAGE_DEVICE_DESCRIPTOR struct {
 	RawPropertiesLength   uint32
 	RawDeviceProperties   [1]byte
 }
+
+// Partition layout structures
+type DRIVE_LAYOUT_INFORMATION_EX struct {
+	PartitionStyle uint32
+	PartitionCount uint32
+	DriveLayoutInfo [8]byte // Union placeholder
+	PartitionEntry [1]PARTITION_INFORMATION_EX
+}
+
+type PARTITION_INFORMATION_EX struct {
+	PartitionStyle   uint32
+	StartingOffset   int64
+	PartitionLength  int64
+	PartitionNumber  uint32
+	RewritePartition bool
+	IsServicePartition bool
+	PartitionInfo    [112]byte // Union: GPT or MBR info
+}
+
+// Partition styles
+const (
+	PARTITION_STYLE_MBR = 0
+	PARTITION_STYLE_GPT = 1
+	PARTITION_STYLE_RAW = 2
+)
 
 // Bus types
 const (
@@ -361,6 +387,9 @@ func getDiskInfo(devicePath string) (*Disk, error) {
 		}
 	}
 
+	// Enumerate partitions
+	disk.Partitions = enumeratePartitionsWindows(disk.Path, disk.SectorSize)
+
 	return disk, nil
 }
 
@@ -374,6 +403,105 @@ func extractString(buf []byte, offset uint32) string {
 		end++
 	}
 	return string(buf[offset:end])
+}
+
+// enumeratePartitionsWindows gets partition info using IOCTL_DISK_GET_DRIVE_LAYOUT_EX.
+func enumeratePartitionsWindows(diskPath string, sectorSize int) []*Partition {
+	pathPtr, _ := syscall.UTF16PtrFromString(diskPath)
+
+	// Open disk with read access for IOCTL
+	handle, _, _ := procCreateFileW.Call(
+		uintptr(unsafe.Pointer(pathPtr)),
+		GENERIC_READ,
+		FILE_SHARE_READ|FILE_SHARE_WRITE,
+		0,
+		OPEN_EXISTING,
+		0,
+		0,
+	)
+
+	if syscall.Handle(handle) == INVALID_HANDLE_VALUE {
+		return nil
+	}
+	defer procCloseHandle.Call(handle)
+
+	// Allocate buffer for layout (header + up to 128 partitions)
+	const maxPartitions = 128
+	bufSize := unsafe.Sizeof(DRIVE_LAYOUT_INFORMATION_EX{}) +
+		(maxPartitions * unsafe.Sizeof(PARTITION_INFORMATION_EX{}))
+	buf := make([]byte, bufSize)
+
+	var bytesReturned uint32
+	ret, _, _ := procDeviceIoControl.Call(
+		handle,
+		IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+		0, 0,
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)),
+		uintptr(unsafe.Pointer(&bytesReturned)),
+		0,
+	)
+
+	if ret == 0 {
+		return nil
+	}
+
+	// Parse layout structure
+	layout := (*DRIVE_LAYOUT_INFORMATION_EX)(unsafe.Pointer(&buf[0]))
+	if layout.PartitionCount == 0 {
+		return nil
+	}
+
+	var partitions []*Partition
+
+	// Get pointer to first partition entry (follows the header)
+	partEntriesOffset := unsafe.Sizeof(DRIVE_LAYOUT_INFORMATION_EX{}) - unsafe.Sizeof(PARTITION_INFORMATION_EX{})
+
+	for i := uint32(0); i < layout.PartitionCount && i < maxPartitions; i++ {
+		offset := partEntriesOffset + (uintptr(i) * unsafe.Sizeof(PARTITION_INFORMATION_EX{}))
+		partInfo := (*PARTITION_INFORMATION_EX)(unsafe.Pointer(&buf[offset]))
+
+		// Skip empty/unused partition entries
+		if partInfo.PartitionLength == 0 || partInfo.PartitionNumber == 0 {
+			continue
+		}
+
+		// Calculate LBA values
+		sectorSz := int64(sectorSize)
+		if sectorSz == 0 {
+			sectorSz = 512
+		}
+		startLBA := partInfo.StartingOffset / sectorSz
+		endLBA := (partInfo.StartingOffset + partInfo.PartitionLength) / sectorSz - 1
+
+		// Construct partition path
+		partPath := fmt.Sprintf("\\\\.\\PHYSICALDRIVE%d\\Partition%d",
+			extractDiskNumber(diskPath), partInfo.PartitionNumber)
+
+		part := &Partition{
+			Path:      partPath,
+			Name:      fmt.Sprintf("Partition%d", partInfo.PartitionNumber),
+			Number:    int(partInfo.PartitionNumber),
+			StartLBA:  startLBA,
+			EndLBA:    endLBA,
+			SizeBytes: partInfo.PartitionLength,
+		}
+
+		// Note: On Windows, filesystem info would come from WMI or volume APIs
+		// For now, partitions won't have FSType - that's OK for size calculation
+		// which only needs LBA values
+
+		partitions = append(partitions, part)
+	}
+
+	return partitions
+}
+
+// extractDiskNumber extracts the disk number from paths like \\.\PhysicalDrive0
+func extractDiskNumber(path string) int {
+	var num int
+	fmt.Sscanf(path, "\\\\.\\PhysicalDrive%d", &num)
+	return num
 }
 
 // EnumerateFromPath is a stub for Windows (not supported).

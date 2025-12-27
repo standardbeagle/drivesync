@@ -111,14 +111,13 @@ create_debian_live() {
         rm -rf "$rootfs_dir"
         mkdir -p "$rootfs_dir"
 
-        # Debootstrap with essential packages
+        # Debootstrap with minimal packages for disk cloning only
         info "Running debootstrap (this may take 5-10 minutes)..."
         debootstrap \
             --variant=minbase \
             --include=linux-image-amd64,live-boot,live-boot-initramfs-tools,\
 initramfs-tools,systemd,systemd-sysv,udev,kmod,bash,\
-pciutils,usbutils,util-linux,dosfstools,ntfs-3g,\
-dbus,procps,iproute2,iputils-ping,ca-certificates \
+pciutils,usbutils,util-linux,dosfstools,ntfs-3g \
             "$DEBIAN_RELEASE" \
             "$rootfs_dir" \
             "$DEBIAN_MIRROR"
@@ -132,32 +131,95 @@ deb $DEBIAN_SECURITY $DEBIAN_RELEASE-security main contrib non-free-firmware
 deb $DEBIAN_MIRROR $DEBIAN_RELEASE-updates main contrib non-free-firmware
 EOF
 
-        # Install firmware packages via chroot (triggers initramfs rebuild)
-        info "Installing firmware packages..."
+        # Install minimal firmware - only what's needed for storage
+        info "Installing minimal firmware for storage devices..."
         chroot "$rootfs_dir" /bin/bash -c "
             apt-get update
-            apt-get install -y --no-install-recommends \
-                firmware-linux-free \
-                firmware-misc-nonfree \
-                firmware-linux-nonfree
+            # Only install firmware needed for NVMe/SATA controllers
+            apt-get install -y --no-install-recommends firmware-linux-free
             apt-get clean
             rm -rf /var/lib/apt/lists/*
         "
 
+        # Blacklist unnecessary kernel modules
+        info "Blacklisting unnecessary drivers (bluetooth, wifi, sound)..."
+        cat > "$rootfs_dir/etc/modprobe.d/blacklist-unnecessary.conf" << 'EOF'
+# Blacklist bluetooth
+blacklist bluetooth
+blacklist btusb
+blacklist btrtl
+blacklist btbcm
+blacklist btintel
+blacklist btmtk
+
+# Blacklist WiFi
+blacklist iwlwifi
+blacklist iwlmvm
+blacklist iwldvm
+blacklist cfg80211
+blacklist mac80211
+
+# Blacklist sound
+blacklist snd
+blacklist snd_hda_intel
+blacklist snd_hda_codec
+blacklist snd_pcm
+blacklist snd_timer
+blacklist soundcore
+
+# Blacklist other unnecessary modules
+blacklist pcspkr
+blacklist mei
+blacklist mei_me
+blacklist iTCO_wdt
+blacklist iTCO_vendor_support
+EOF
+
+        # Disable unnecessary systemd services
+        info "Disabling unnecessary services..."
+        chroot "$rootfs_dir" /bin/bash -c "
+            # Mask services we don't need for disk cloning
+            systemctl mask bluetooth.service 2>/dev/null || true
+            systemctl mask wpa_supplicant.service 2>/dev/null || true
+            systemctl mask NetworkManager.service 2>/dev/null || true
+            systemctl mask ModemManager.service 2>/dev/null || true
+            systemctl mask avahi-daemon.service 2>/dev/null || true
+            systemctl mask cups.service 2>/dev/null || true
+        "
+
+        # Create initramfs hook - only storage firmware
+        info "Configuring initramfs for storage hardware..."
+        cat > "$rootfs_dir/etc/initramfs-tools/hooks/firmware" << 'HOOKEOF'
+#!/bin/sh
+set -e
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+
+# Copy only storage-related firmware
+mkdir -p "${DESTDIR}/lib/firmware"
+for fw in i915 amdgpu radeon nvidia; do
+    if [ -d "/lib/firmware/$fw" ]; then
+        mkdir -p "${DESTDIR}/lib/firmware/$fw"
+        cp -a "/lib/firmware/$fw"/* "${DESTDIR}/lib/firmware/$fw/" 2>/dev/null || true
+    fi
+done
+# Intel RST/RAID firmware
+cp -a /lib/firmware/intel* "${DESTDIR}/lib/firmware/" 2>/dev/null || true
+HOOKEOF
+        chmod +x "$rootfs_dir/etc/initramfs-tools/hooks/firmware"
+
+        # Rebuild initramfs
+        chroot "$rootfs_dir" update-initramfs -u -k all
+
         # Configure hostname
         echo "drivesync-live" > "$rootfs_dir/etc/hostname"
 
-        # Configure network (DHCP on all interfaces)
+        # Minimal network config - loopback only (no networking needed for disk cloning)
         mkdir -p "$rootfs_dir/etc/network"
         cat > "$rootfs_dir/etc/network/interfaces" << 'EOF'
 auto lo
 iface lo inet loopback
-
-allow-hotplug eth0
-iface eth0 inet dhcp
-
-allow-hotplug wlan0
-iface wlan0 inet dhcp
 EOF
 
         # Create fstab
@@ -241,7 +303,7 @@ create_boot_structure() {
     cp "$grub_dir/shimx64.efi" "$work_dir/EFI/BOOT/bootx64.efi"
     cp "$grub_dir/grubx64.efi" "$work_dir/EFI/BOOT/grubx64.efi"
 
-    # GRUB configuration for Debian Live
+    # GRUB configuration for Debian Live - minimal for disk cloning
     cat > "$work_dir/boot/grub/grub.cfg" << 'EOF'
 set default="0"
 set timeout="3"
@@ -255,18 +317,18 @@ if loadfont ${prefix}/unicode.pf2; then
     terminal_output gfxterm
 fi
 
+# Kernel params to disable unnecessary hardware
+# nomodeset: disable graphics drivers
+# modprobe.blacklist: disable bluetooth, wifi, sound at kernel level
+# quiet: reduce boot messages
+
 menuentry "DriveSync Live" {
-    linux /live/vmlinuz boot=live components quiet splash
+    linux /live/vmlinuz boot=live toram live-media-path=/live components nomodeset noplymouth modprobe.blacklist=bluetooth,btusb,iwlwifi,snd_hda_intel quiet
     initrd /live/initrd.img
 }
 
-menuentry "DriveSync Live (Debug - verbose boot)" {
-    linux /live/vmlinuz boot=live components debug
-    initrd /live/initrd.img
-}
-
-menuentry "DriveSync Live (Safe mode - no KMS)" {
-    linux /live/vmlinuz boot=live components nomodeset
+menuentry "DriveSync Live (Debug)" {
+    linux /live/vmlinuz boot=live toram live-media-path=/live components nomodeset noplymouth modprobe.blacklist=bluetooth,btusb,iwlwifi,snd_hda_intel debug
     initrd /live/initrd.img
 }
 EOF
