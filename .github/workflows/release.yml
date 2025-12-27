@@ -24,21 +24,20 @@ jobs:
         run: go test -v ./...
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y cpio binutils
+        run: sudo apt-get update && sudo apt-get install -y debootstrap squashfs-tools xorriso liblz4-tool
 
       - name: Build binary
         run: make build
 
-      - name: Build USB image (Alpine-based)
-        run: make usb-alpine
+      - name: Build USB image (Debian Live)
+        run: sudo make usb-live
 
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/drivesync-linux-amd64
-            dist/drivesync-usb.zip
-            dist/drivesync-usb-auto.zip
+            dist/drivesync-live-usb.zip
           generate_release_notes: true
           body: |
             ## Downloads
@@ -46,17 +45,13 @@ jobs:
             | File | Description |
             |------|-------------|
             | `drivesync-linux-amd64` | Static binary for Linux |
-            | `drivesync-usb.zip` | Standard edition - interactive mode with full TUI |
-            | `drivesync-usb-auto.zip` | Auto-clone edition - boots and clones automatically, no interaction required |
+            | `drivesync-live-usb.zip` | Debian Live bootable USB with full hardware support |
 
             ### Secure Boot Compatible
-            Both USB editions use Debian's signed GRUB bootloader and work with Secure Boot enabled.
+            Uses Debian's signed GRUB bootloader and works with Secure Boot enabled.
             No need to disable Secure Boot in BIOS.
 
-            ### Auto-Clone Edition
-            The auto-clone edition is pre-configured to:
-            - Boot directly into cloning mode
-            - Clone the internal drive to the boot drive
-            - No user interaction required
-
-            Perfect for batch cloning operations or deployment scenarios.
+            ### Usage
+            1. Extract to a FAT32 USB drive
+            2. Boot from USB (UEFI mode)
+            3. DriveSync starts automatically

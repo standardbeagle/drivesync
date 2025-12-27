@@ -232,15 +232,14 @@ To create a fully bootable DriveSync USB, you need:
    - The DriveSync binary
    - An init script that runs DriveSync
 
-RECOMMENDED BASE SYSTEMS:
-- Alpine Linux (minimal, musl-based)
-- Void Linux (minimal, good driver support)
-- Debian Live (stable, comprehensive drivers)
+RECOMMENDED:
+Use the Debian Live build script instead:
+  make usb-live
 
-QUICK METHOD WITH ALPINE:
-1. Download Alpine "extended" ISO
-2. Extract boot/vmlinuz-lts and boot/initramfs-lts
-3. Repack initramfs with DriveSync added
+This creates a complete bootable image with:
+- Full Debian Linux with all drivers
+- Secure Boot compatible (signed GRUB)
+- Works on Surface Pro and modern PCs
 
 CUSTOM INITRAMFS:
 See scripts/build-initramfs.sh for a complete example.

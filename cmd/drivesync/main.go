@@ -89,10 +89,11 @@ Options:
 
 Configuration:
   DriveSync looks for configuration in these locations:
-    /drivesync.kdl           Root of boot drive
-    /boot/drivesync.kdl      Boot partition
-    /etc/drivesync.kdl       System config
-    ./drivesync.kdl          Current directory
+    /run/live/medium/drivesync.kdl  Debian Live boot medium
+    /drivesync.kdl                  Root of boot drive
+    /boot/drivesync.kdl             Boot partition
+    /etc/drivesync.kdl              System config
+    ./drivesync.kdl                 Current directory
 
   Configuration allows pre-setting source and destination drives
   for one-click or automatic cloning. Modes:

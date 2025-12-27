@@ -1,3 +1,5 @@
+//go:build !windows
+
 package devices
 
 import (
@@ -67,28 +69,3 @@ func PopulatePartitionInfo(disks []*Disk) {
 	}
 }
 
-// NormalizeFSType converts filesystem type to a display-friendly format.
-func NormalizeFSType(fsType string) string {
-	switch strings.ToLower(fsType) {
-	case "vfat", "fat32", "fat16", "fat12", "msdos":
-		return "FAT32"
-	case "ntfs", "ntfs-3g":
-		return "NTFS"
-	case "ext4":
-		return "ext4"
-	case "ext3":
-		return "ext3"
-	case "ext2":
-		return "ext2"
-	case "btrfs":
-		return "Btrfs"
-	case "xfs":
-		return "XFS"
-	case "swap":
-		return "Swap"
-	case "":
-		return ""
-	default:
-		return fsType
-	}
-}

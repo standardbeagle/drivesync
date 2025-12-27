@@ -396,7 +396,10 @@ func (m *Model) analyzeSize() {
 	// TODO: Get last used LBA from GPT
 	srcLastUsed := int64(0)
 
-	analysis := clone.Analyze(srcSize, dstSize, srcLastUsed)
+	// Check for encrypted partitions on source
+	hasEncryption := devices.HasEncryptedPartitions(m.sourceDisk)
+
+	analysis := clone.AnalyzeWithEncryption(srcSize, dstSize, srcLastUsed, hasEncryption)
 	m.analysis = &analysis
 }
 
@@ -766,6 +769,11 @@ func (m Model) viewError() string {
 	title := m.styles.WindowTitle.Render("Error")
 
 	content := "\n\n" + m.styles.Error.Render("  ✗ "+m.errorMsg) + "\n"
+
+	// Show detailed instructions if available
+	if m.analysis != nil && m.analysis.ErrorDetails != "" {
+		content += "\n" + m.styles.Info.Render(m.analysis.ErrorDetails) + "\n"
+	}
 
 	footer := m.renderFooter([]footerItem{
 		{"Esc", "Back"},

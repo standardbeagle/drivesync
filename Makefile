@@ -38,9 +38,9 @@ vet:
 usb: build
 	./boot/build-usb.sh
 
-# Create complete bootable USB image with Alpine Linux
-usb-alpine: build
-	./boot/build-alpine.sh
+# Create complete bootable USB image with Debian Live
+usb-live: build
+	./boot/build-debian-live.sh
 
 # Create release artifacts
 release: build usb
@@ -81,7 +81,7 @@ help:
 	@echo "  fmt            Format code"
 	@echo "  vet            Run go vet"
 	@echo "  usb            Create bootable USB image (placeholder)"
-	@echo "  usb-alpine     Create complete bootable USB with Alpine Linux"
+	@echo "  usb-live       Create complete bootable USB with Debian Live"
 	@echo "  release        Create release artifacts"
 	@echo "  install        Install binary to /usr/local/bin"
 	@echo "  run            Build and run (requires sudo)"

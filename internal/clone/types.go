@@ -73,34 +73,57 @@ func (r Result) AvgSpeedMBps() float64 {
 
 // SizeAnalysis represents the analysis of source and destination sizes.
 type SizeAnalysis struct {
-	SourceSize      int64 // Source disk size in bytes
-	DestSize        int64 // Destination disk size in bytes
-	SourceLastUsed  int64 // Last used byte on source (from GPT)
-	Difference      int64 // DestSize - SourceSize (negative if dest smaller)
-	CanClone        bool  // Clone will fit on destination
-	NeedsGPTFixup   bool  // GPT needs to be updated after clone
-	CloneBytes      int64 // Number of bytes to actually clone
-	UnallocatedTail int64 // Unused space at end of destination
-	ErrorMessage    string // If CanClone is false, why
+	SourceSize       int64  // Source disk size in bytes
+	DestSize         int64  // Destination disk size in bytes
+	SourceLastUsed   int64  // Last used byte on source (from GPT)
+	Difference       int64  // DestSize - SourceSize (negative if dest smaller)
+	CanClone         bool   // Clone will fit on destination
+	NeedsGPTFixup    bool   // GPT needs to be updated after clone
+	CloneBytes       int64  // Number of bytes to actually clone
+	UnallocatedTail  int64  // Unused space at end of destination
+	HasEncryption    bool   // Source has encrypted partitions
+	ErrorMessage     string // If CanClone is false, why
+	ErrorDetails     string // Detailed instructions for fixing the error
 }
 
 // Analyze performs size analysis for a potential clone operation.
+// hasEncryption indicates if the source has encrypted partitions (BitLocker, LUKS).
 func Analyze(srcSize, dstSize, srcLastUsed int64) SizeAnalysis {
+	return AnalyzeWithEncryption(srcSize, dstSize, srcLastUsed, false)
+}
+
+// AnalyzeWithEncryption performs size analysis with encryption awareness.
+func AnalyzeWithEncryption(srcSize, dstSize, srcLastUsed int64, hasEncryption bool) SizeAnalysis {
 	a := SizeAnalysis{
 		SourceSize:     srcSize,
 		DestSize:       dstSize,
 		SourceLastUsed: srcLastUsed,
 		Difference:     dstSize - srcSize,
+		HasEncryption:  hasEncryption,
 	}
 
 	if dstSize >= srcSize {
-		// Destination is same size or larger - straightforward clone
+		// Destination is same size or larger - always safe
 		a.CanClone = true
 		a.CloneBytes = srcSize
 		a.NeedsGPTFixup = false
 		a.UnallocatedTail = dstSize - srcSize
+	} else if hasEncryption {
+		// Destination smaller AND source has encryption - cannot safely truncate
+		a.CanClone = false
+		a.ErrorMessage = "Destination too small for encrypted source"
+		a.ErrorDetails = `The source drive contains BitLocker or other encrypted volumes.
+Encrypted volumes cannot be truncated - the entire disk must be cloned.
+
+OPTIONS:
+1. Use a larger destination drive (>= source size)
+2. In Windows, shrink the main partition before cloning:
+   - Open Settings > System > Storage > Disks & volumes
+   - Select your main partition > Properties > Change size
+   - Or: diskmgmt.msc > Right-click volume > Shrink Volume
+3. Disable BitLocker, shrink partition, re-enable BitLocker`
 	} else if srcLastUsed > 0 && dstSize >= srcLastUsed {
-		// Destination is smaller but used data fits
+		// Destination is smaller but used data fits (no encryption)
 		a.CanClone = true
 		a.CloneBytes = srcLastUsed
 		a.NeedsGPTFixup = true
@@ -108,11 +131,23 @@ func Analyze(srcSize, dstSize, srcLastUsed int64) SizeAnalysis {
 	} else if srcLastUsed > 0 && dstSize < srcLastUsed {
 		// Destination too small for used data
 		a.CanClone = false
-		a.ErrorMessage = "destination too small for source data; shrink source partition first"
+		a.ErrorMessage = "Destination too small for source data"
+		a.ErrorDetails = `The destination drive is smaller than the used space on source.
+
+OPTIONS:
+1. Use a larger destination drive
+2. Delete unnecessary files from source
+3. Shrink the source partition in Windows Disk Management`
 	} else {
 		// No GPT info, can't safely clone to smaller disk
 		a.CanClone = false
-		a.ErrorMessage = "destination smaller than source and cannot determine used space"
+		a.ErrorMessage = "Cannot clone to smaller destination"
+		a.ErrorDetails = `The destination is smaller than the source and we cannot
+determine how much space is actually used on the source.
+
+OPTIONS:
+1. Use a destination drive >= source size
+2. This is the safest option for system drives`
 	}
 
 	return a
