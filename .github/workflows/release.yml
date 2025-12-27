@@ -24,10 +24,19 @@ jobs:
         run: go test -v ./...
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y debootstrap squashfs-tools xorriso liblz4-tool
+        run: sudo apt-get update && sudo apt-get install -y debootstrap squashfs-tools xorriso liblz4-tool zip
 
-      - name: Build binary
+      - name: Build Linux binary
         run: make build
+
+      - name: Build Windows binary
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(git describe --tags --always)" -o dist/drivesync.exe ./cmd/drivesync
+
+      - name: Create Windows zip
+        run: |
+          cd dist
+          zip drivesync-windows-amd64.zip drivesync.exe
+          cd ..
 
       - name: Build USB image (Debian Live)
         run: sudo make usb-live
@@ -37,6 +46,7 @@ jobs:
         with:
           files: |
             dist/drivesync-linux-amd64
+            dist/drivesync-windows-amd64.zip
             dist/drivesync-live-usb.zip
           generate_release_notes: true
           body: |
@@ -44,14 +54,38 @@ jobs:
 
             | File | Description |
             |------|-------------|
-            | `drivesync-linux-amd64` | Static binary for Linux |
+            | `drivesync-linux-amd64` | Static binary for Linux (CLI mode) |
+            | `drivesync-windows-amd64.zip` | Windows executable with VSS live cloning support |
             | `drivesync-live-usb.zip` | Debian Live bootable USB with full hardware support |
 
-            ### Secure Boot Compatible
-            Uses Debian's signed GRUB bootloader and works with Secure Boot enabled.
-            No need to disable Secure Boot in BIOS.
+            ## New in This Release
 
-            ### Usage
-            1. Extract to a FAT32 USB drive
+            ### Windows Support
+            - **VSS Live Cloning**: Clone your running Windows system without rebooting
+            - **Double-click workflow**: Run drivesync.exe → auto-detect drives → press Enter → automatic clone
+            - **Smart auto-detection**: Automatically identifies source and destination drives
+            - Requires Administrator privileges for VSS snapshots
+
+            ### Linux Improvements
+            - Enhanced partition enumeration for accurate space calculations
+            - Fixed "destination too small" errors with shrunk BitLocker volumes
+            - Cross-platform direct I/O for maximum performance
+
+            ### Bootable USB
+            - **Secure Boot Compatible**: Uses Debian's signed GRUB bootloader
+            - No need to disable Secure Boot in BIOS
+            - Optimized boot time with minimal services
+
+            ## Usage
+
+            ### Windows (VSS Live Clone)
+            1. Extract `drivesync-windows-amd64.zip`
+            2. Right-click `drivesync.exe` → Run as Administrator
+            3. Press **Enter** to clone auto-detected drives, or **S/D** to select manually
+            4. System clones while running (no reboot needed)
+
+            ### Bootable USB (Linux Live)
+            1. Extract `drivesync-live-usb.zip` to a FAT32 USB drive
             2. Boot from USB (UEFI mode)
             3. DriveSync starts automatically
+            4. Select source and destination drives

@@ -1,84 +1,127 @@
 # DriveSync
 
-A minimal UEFI-bootable drive cloning utility with a modern TUI.
+A cross-platform drive cloning utility with Windows VSS live cloning and bootable Linux USB support.
 
 ## Overview
 
-DriveSync is a standalone bootable tool for block-level drive cloning. It provides a clean, hardware-friendly alternative to Clonezilla with proper handling of the "2TB to 2TB" problem where nominally identical drives differ in actual sector count.
+DriveSync is a block-level drive cloning tool that works on both Windows and Linux. It provides intelligent auto-detection, live system cloning via Windows VSS, and a bootable USB option for maximum flexibility.
 
-**Key differentiator:** Self-overwrite mode. Extract DriveSync to the destination drive, boot from it, and it clones the internal drive onto itself - running entirely from RAM while erasing its own boot media. No USB stick required.
+**Key features:**
+- **Windows VSS Live Cloning**: Clone your running Windows system without rebooting
+- **Smart Auto-Detection**: Automatically identifies source and destination drives
+- **Bootable USB**: Self-contained Linux environment with Secure Boot support
+- **GPT-aware**: Handles the "2TB to 2TB" size mismatch problem
 
 ## Quick Start
 
-### Traditional Mode (3 drives)
+### Windows (VSS Live Clone)
 
-1. Extract `drivesync-usb.zip` to a FAT32 USB stick
-2. Boot from the USB
-3. Select source drive
-4. Select destination drive
-5. Type "clone" to confirm
+**Clone your running Windows system to an external drive:**
 
-### Self-Overwrite Mode (2 drives)
+1. Download `drivesync-windows-amd64.zip` from [releases](https://github.com/standardbeagle/drivesync/releases)
+2. Extract and right-click `drivesync.exe` → **Run as Administrator**
+3. Press **Enter** to clone auto-detected drives, or **S/D** to select manually
+4. Clone happens live - no reboot needed!
 
-1. Extract `drivesync-usb.zip` to the destination drive (in USB enclosure)
+**Use case:** Upgrade your laptop's internal SSD while Windows is running. Connect new drive via USB, clone, shutdown, swap drives.
+
+### Linux Bootable USB - Traditional Mode
+
+1. Download `drivesync-live-usb.zip` from [releases](https://github.com/standardbeagle/drivesync/releases)
+2. Extract to a FAT32 USB stick
+3. Boot from the USB (works with Secure Boot enabled)
+4. Select source drive
+5. Select destination drive
+6. Type "clone" to confirm
+
+### Linux Bootable USB - Self-Overwrite Mode (2 drives)
+
+1. Extract `drivesync-live-usb.zip` to the destination drive (in USB enclosure)
 2. Boot from the destination drive
 3. One-click clone: internal drive → this drive
 4. Swap drives, done
 
 ## Features
 
-- **Modern TUI** - Clean interface with keyboard navigation
-- **Block-level cloning** - Copies everything including boot sectors
+### Cross-Platform Support
+- **Windows VSS Live Cloning** - Clone running Windows systems without reboot
+- **Linux Bootable USB** - Debian Live environment with Secure Boot support
+- **Smart Auto-Detection** - Automatically identifies source and destination
+- **One-click workflow** - Press Enter to start clone with detected drives
+
+### Core Capabilities
+- **Block-level cloning** - Copies everything including boot sectors and partition tables
 - **GPT-aware** - Handles the "2TB to 2TB" size mismatch problem
-- **Self-overwrite mode** - Clone to the drive you booted from
-- **Progress tracking** - Real-time speed and ETA
-- **Verification** - Optional read-back verification
+- **Partition enumeration** - Accurate space calculations, even with shrunk BitLocker volumes
+- **Direct I/O** - Platform-specific unbuffered I/O for maximum performance
+- **Self-overwrite mode** - Clone to the drive you booted from (Linux USB only)
 
-## Building
+### User Experience
+- **Modern TUI** - Clean Bubble Tea interface with keyboard navigation
+- **Progress tracking** - Real-time speed, ETA, and completion percentage
+- **Error handling** - Clear messages for encryption, size mismatches, and disk issues
+- **Multiple workflows** - Auto mode, manual selection, or config file
 
-```bash
-# Build Linux binary
-make build
+## Downloads
 
-# Run tests
-make test
+Get the latest release from [GitHub Releases](https://github.com/standardbeagle/drivesync/releases):
 
-# Create bootable USB image
-make usb
-```
+| File | Platform | Description |
+|------|----------|-------------|
+| `drivesync-windows-amd64.zip` | Windows | VSS live cloning - clone running systems |
+| `drivesync-live-usb.zip` | Any (bootable) | Debian Live USB - Secure Boot compatible |
+| `drivesync-linux-amd64` | Linux | Static binary for CLI mode |
 
-## Requirements
+## System Requirements
 
-- Linux (for building and running)
-- Go 1.22+ (for building)
-- Root privileges (for running)
+- **Windows**: Windows 10/11 with Administrator privileges
+- **Bootable USB**: Any x86_64 PC with UEFI (Secure Boot works out of the box)
+- **Linux**: Any modern Linux distribution with root access
 
-## Architecture
+## Common Use Cases
 
-```
-drivesync/
-├── cmd/drivesync/          # Main entry point
-├── internal/
-│   ├── clone/              # Copy engine
-│   ├── devices/            # Drive enumeration
-│   ├── gpt/                # GPT parsing/writing
-│   └── tui/                # Bubble Tea UI
-├── boot/                   # Bootable image scripts
-└── testdata/               # Test fixtures
-```
+### Upgrade Your Laptop SSD (Windows)
+1. Connect new SSD via USB enclosure
+2. Run `drivesync.exe` as Administrator
+3. Press Enter to auto-clone
+4. Shutdown, swap drives, boot from new SSD
 
-## The 2TB Problem
+### Clone Before Hardware Failure
+1. Boot from DriveSync USB
+2. Clone failing drive to new drive
+3. Works even if Windows won't boot
 
-"2TB" drives vary by manufacturer:
-- WD Blue 2TB: 2,000,398,934,016 bytes
-- Samsung 870 2TB: 1,999,844,147,200 bytes
-- Difference: ~554 MB
+### Create Exact Backup
+- Clones everything: OS, apps, files, partition layout
+- Destination drive boots identically to source
+- No need to reinstall or reconfigure
 
-DriveSync solves this by:
-1. Parsing GPT to find the last used sector
-2. If data fits on destination → clone only used extent
-3. Rewrite GPT backup table at new disk end
+## Technical Details
+
+For developers and advanced users:
+- [Building from Source](docs/BUILDING.md) - Compile for Windows, Linux, or create bootable USB
+- [How It Works](docs/TECHNICAL.md) - Architecture, GPT handling, and the "2TB problem"
+- [Configuration](docs/CONFIGURATION.md) - KDL config files for automation
+
+## FAQs
+
+**Q: Can I clone to a smaller drive?**
+A: Yes, if the used data fits. DriveSync calculates actual space usage and handles shrunk partitions correctly.
+
+**Q: Will it work with BitLocker/encrypted drives?**
+A: Yes. On Windows, VSS handles live encrypted volumes. Shrink the BitLocker partition first if cloning to smaller drive.
+
+**Q: Does it work with Secure Boot enabled?**
+A: Yes. The bootable USB uses Debian's signed GRUB bootloader - no need to disable Secure Boot.
+
+**Q: How long does it take?**
+A: Depends on drive size and USB speed. Typical 500GB clone over USB 3.0 takes 1-2 hours.
 
 ## License
 
-MIT
+MIT - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+- Report issues: [GitHub Issues](https://github.com/standardbeagle/drivesync/issues)
+- Discussions: [GitHub Discussions](https://github.com/standardbeagle/drivesync/discussions)
