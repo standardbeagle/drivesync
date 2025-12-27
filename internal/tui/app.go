@@ -30,12 +30,6 @@ const (
 	ScreenError
 )
 
-// vssSnapshot wraps a VSS snapshot with its original path.
-type vssSnapshot struct {
-	snapshot     *vss.Snapshot
-	originalPath string
-}
-
 // Model is the main Bubble Tea model.
 type Model struct {
 	// Configuration
@@ -65,9 +59,6 @@ type Model struct {
 	// Self-overwrite mode
 	selfOverwrite bool
 	bootDevice    *devices.Disk
-
-	// VSS snapshot (Windows only)
-	vssSnapshot *vssSnapshot
 
 	// Error
 	errorMsg string
@@ -519,7 +510,9 @@ func (m Model) runClone() tea.Cmd {
 			if err == nil {
 				snapshot, err = vss.CreateSnapshot(volumePath)
 				if err == nil {
-					defer snapshot.Delete()
+					defer func() {
+						_ = snapshot.Delete() // Best effort cleanup
+					}()
 					// Wait for snapshot to be ready
 					if err := snapshot.WaitForSnapshot(30 * time.Second); err == nil {
 						sourcePath = snapshot.DevicePath

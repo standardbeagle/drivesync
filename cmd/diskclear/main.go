@@ -49,7 +49,6 @@ type Model struct {
 	confirmInput string
 	message      string
 	errorMsg     string
-	backupPath   string
 	width        int
 	height       int
 	quitting     bool
@@ -249,7 +248,9 @@ func (m Model) doClear() tea.Msg {
 
 	// Create backup first
 	backupDir := filepath.Join(os.TempDir(), "diskclear-backups")
-	os.MkdirAll(backupDir, 0755)
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return errorMsg{fmt.Errorf("cannot create backup directory: %w", err)}
+	}
 
 	timestamp := time.Now().Format("20060102-150405")
 	backupFile := filepath.Join(backupDir, fmt.Sprintf("%s-%s.bin", disk.Name, timestamp))
@@ -289,9 +290,18 @@ func (m Model) doClear() tea.Msg {
 	// Write header with metadata
 	header := fmt.Sprintf("DISKCLEAR-BACKUP\nDevice: %s\nModel: %s\nSize: %d\nTimestamp: %s\nStartLen: %d\nEndLen: %d\n---DATA---\n",
 		disk.Path, disk.Model, disk.SizeBytes, timestamp, len(startData), len(endData))
-	backup.WriteString(header)
-	backup.Write(startData)
-	backup.Write(endData)
+	if _, err = backup.WriteString(header); err != nil {
+		backup.Close()
+		return errorMsg{fmt.Errorf("cannot write backup header: %w", err)}
+	}
+	if _, err = backup.Write(startData); err != nil {
+		backup.Close()
+		return errorMsg{fmt.Errorf("cannot write backup data: %w", err)}
+	}
+	if _, err = backup.Write(endData); err != nil {
+		backup.Close()
+		return errorMsg{fmt.Errorf("cannot write backup end data: %w", err)}
+	}
 	backup.Close()
 
 	// Now clear the partition table
@@ -311,11 +321,15 @@ func (m Model) doClear() tea.Msg {
 	if disk.SizeBytes > BackupSize*2 {
 		_, err = f.Seek(-BackupSize, 2)
 		if err == nil {
-			f.Write(zeros)
+			if _, err = f.Write(zeros); err != nil {
+				return errorMsg{fmt.Errorf("cannot zero backup GPT: %w", err)}
+			}
 		}
 	}
 
-	f.Sync()
+	if err = f.Sync(); err != nil {
+		return errorMsg{fmt.Errorf("cannot sync disk: %w", err)}
+	}
 
 	return operationCompleteMsg{
 		message: fmt.Sprintf("Partition table cleared!\n\nBackup saved to:\n%s\n\nThe drive should now appear as uninitialized.", backupFile),
@@ -421,7 +435,7 @@ func (m Model) viewConfirmClear() string {
 	b.WriteString(dangerStyle.Render("║          ⚠ WARNING ⚠                ║") + "\n")
 	b.WriteString(dangerStyle.Render("╚══════════════════════════════════════╝") + "\n\n")
 
-	b.WriteString(fmt.Sprintf("  You are about to clear the partition table on:\n\n"))
+	b.WriteString("  You are about to clear the partition table on:\n\n")
 	b.WriteString(dangerStyle.Render(fmt.Sprintf("    %s - %s (%.1f GB)\n\n",
 		m.selectedDisk.Path,
 		m.selectedDisk.DisplayName(),
@@ -498,7 +512,7 @@ func (m Model) viewRestore() string {
 
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render("  To restore, run:") + "\n")
-	b.WriteString(dimStyle.Render(fmt.Sprintf("    diskclear --restore <backup.bin> /dev/sdX")) + "\n\n")
+	b.WriteString(dimStyle.Render("    diskclear --restore <backup.bin> /dev/sdX") + "\n\n")
 	b.WriteString(dimStyle.Render("  Esc Back") + "\n")
 
 	return b.String()
@@ -559,10 +573,10 @@ func restoreBackup(backupPath, devicePath string) {
 	var startLen, endLen int
 	for _, line := range strings.Split(header, "\n") {
 		if strings.HasPrefix(line, "StartLen: ") {
-			fmt.Sscanf(line, "StartLen: %d", &startLen)
+			_, _ = fmt.Sscanf(line, "StartLen: %d", &startLen)
 		}
 		if strings.HasPrefix(line, "EndLen: ") {
-			fmt.Sscanf(line, "EndLen: %d", &endLen)
+			_, _ = fmt.Sscanf(line, "EndLen: %d", &endLen)
 		}
 	}
 
@@ -587,7 +601,7 @@ func restoreBackup(backupPath, devicePath string) {
 
 	fmt.Printf("Type 'yes' to restore: ")
 	var confirm string
-	fmt.Scanln(&confirm)
+	_, _ = fmt.Scanln(&confirm)
 	if confirm != "yes" {
 		fmt.Println("Aborted")
 		return
@@ -610,11 +624,17 @@ func restoreBackup(backupPath, devicePath string) {
 	if len(endData) > 0 {
 		_, err = f.Seek(-int64(len(endData)), 2)
 		if err == nil {
-			f.Write(endData)
+			if _, err = f.Write(endData); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing end data: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 
-	f.Sync()
+	if err = f.Sync(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error syncing disk: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println("Restore complete!")
 }
 
