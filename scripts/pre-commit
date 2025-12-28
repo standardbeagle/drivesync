@@ -1,0 +1,46 @@
+#!/bin/sh
+# Pre-commit hook for DriveSync
+# Runs linting and tests before allowing commit
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Check if golangci-lint is installed
+if ! command -v golangci-lint >/dev/null 2>&1; then
+    echo "Error: golangci-lint is not installed"
+    echo "Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+    exit 1
+fi
+
+# Run linter
+echo "→ Running golangci-lint..."
+if ! golangci-lint run; then
+    echo "✗ Linting failed. Fix errors above before committing."
+    exit 1
+fi
+echo "✓ Linting passed"
+
+# Run tests
+echo "→ Running tests..."
+if ! go test ./...; then
+    echo "✗ Tests failed. Fix failing tests before committing."
+    exit 1
+fi
+echo "✓ Tests passed"
+
+# Auto-format code
+echo "→ Running gofmt..."
+UNFORMATTED=$(gofmt -l . | grep -v '^vendor/' || true)
+if [ -n "$UNFORMATTED" ]; then
+    echo "  Formatting files:"
+    echo "$UNFORMATTED" | sed 's/^/    /'
+    gofmt -w .
+    echo "  Files formatted. Please review and stage changes."
+    echo "✗ Formatted files need to be staged. Run: git add <files>"
+    exit 1
+fi
+echo "✓ Code formatting OK"
+
+echo "✓ All pre-commit checks passed!"
+exit 0

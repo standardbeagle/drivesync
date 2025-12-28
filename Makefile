@@ -2,7 +2,7 @@ VERSION := $(shell git describe --tags --always 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags="-s -w -X main.version=$(VERSION)"
 BINARY := drivesync-linux-amd64
 
-.PHONY: all build clean test test-integration usb docs release
+.PHONY: all build clean test test-integration usb docs release install-hooks uninstall-hooks
 
 all: build
 
@@ -66,6 +66,21 @@ check-tools:
 	@which git > /dev/null || (echo "git not found" && exit 1)
 	@echo "All tools available"
 
+# Install git hooks
+install-hooks:
+	@echo "Installing git hooks..."
+	@cp scripts/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "✓ Pre-commit hook installed"
+	@echo "  Runs: linting, tests, and format checks before each commit"
+	@echo "  To bypass: git commit --no-verify"
+
+# Uninstall git hooks
+uninstall-hooks:
+	@echo "Removing git hooks..."
+	@rm -f .git/hooks/pre-commit
+	@echo "✓ Pre-commit hook removed"
+
 # Show help
 help:
 	@echo "DriveSync Makefile"
@@ -87,3 +102,5 @@ help:
 	@echo "  run            Build and run (requires sudo)"
 	@echo "  fixtures       Generate test fixtures"
 	@echo "  check-tools    Verify build tools are available"
+	@echo "  install-hooks  Install git pre-commit hooks (linting, tests, formatting)"
+	@echo "  uninstall-hooks  Remove git pre-commit hooks"

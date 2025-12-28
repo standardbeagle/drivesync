@@ -78,7 +78,21 @@ cd drivesync
 go mod download
 ```
 
-### 3. Run Tests
+### 3. Install Pre-commit Hooks (Recommended)
+```bash
+make install-hooks
+```
+
+This installs a git hook that automatically runs before each commit:
+- **Linting** - golangci-lint checks
+- **Tests** - Full test suite
+- **Formatting** - Auto-formats code with gofmt
+
+To bypass the hook temporarily: `git commit --no-verify`
+
+To remove the hook: `make uninstall-hooks`
+
+### 4. Run Tests
 ```bash
 make test
 make test-race
