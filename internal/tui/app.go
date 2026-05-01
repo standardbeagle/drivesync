@@ -18,9 +18,9 @@ import (
 type Screen int
 
 const (
-	ScreenLoading Screen = iota
-	ScreenStart           // Start screen with auto-detection
-	ScreenSelfOverwrite   // Pre-configured self-overwrite mode
+	ScreenLoading       Screen = iota
+	ScreenStart                // Start screen with auto-detection
+	ScreenSelfOverwrite        // Pre-configured self-overwrite mode
 	ScreenSelectSource
 	ScreenSelectDest
 	ScreenSizeAnalysis

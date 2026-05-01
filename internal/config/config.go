@@ -82,12 +82,12 @@ func DefaultConfig() *Config {
 // ConfigPaths returns the paths to search for configuration files.
 func ConfigPaths() []string {
 	return []string{
-		"/run/live/medium/drivesync.kdl", // Debian Live boot medium
+		"/run/live/medium/drivesync.kdl",       // Debian Live boot medium
 		"/lib/live/mount/medium/drivesync.kdl", // Debian Live (alt mount point)
-		"/drivesync.kdl",           // Root of boot drive
-		"/boot/drivesync.kdl",      // Boot partition
-		"/etc/drivesync.kdl",       // System config
-		"./drivesync.kdl",          // Current directory (for testing)
+		"/drivesync.kdl",                       // Root of boot drive
+		"/boot/drivesync.kdl",                  // Boot partition
+		"/etc/drivesync.kdl",                   // System config
+		"./drivesync.kdl",                      // Current directory (for testing)
 	}
 }
 

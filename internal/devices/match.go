@@ -82,12 +82,12 @@ func findInternalDrive(disks []*Disk, bootDevice *Disk) *Disk {
 
 // MatchResult contains the result of matching drives from config.
 type MatchResult struct {
-	Source      *Disk
-	Destination *Disk
-	BootDevice  *Disk
-	SourceSpec  *DriveSpec
-	DestSpec    *DriveSpec
-	Error       string
+	Source       *Disk
+	Destination  *Disk
+	BootDevice   *Disk
+	SourceSpec   *DriveSpec
+	DestSpec     *DriveSpec
+	Error        string
 	AutoDetected bool   // True if source/dest were auto-detected (no config needed)
 	Confidence   string // "high" = unambiguous, "medium" = best guess, "low" = needs user input
 }

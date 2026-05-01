@@ -9,20 +9,20 @@ import (
 )
 
 var (
-	kernel32           = syscall.NewLazyDLL("kernel32.dll")
-	procCreateFileW    = kernel32.NewProc("CreateFileW")
-	procCloseHandle    = kernel32.NewProc("CloseHandle")
+	kernel32        = syscall.NewLazyDLL("kernel32.dll")
+	procCreateFileW = kernel32.NewProc("CreateFileW")
+	procCloseHandle = kernel32.NewProc("CloseHandle")
 )
 
 const (
-	GENERIC_READ             = 0x80000000
-	GENERIC_WRITE            = 0x40000000
-	FILE_SHARE_READ          = 0x00000001
-	FILE_SHARE_WRITE         = 0x00000002
-	OPEN_EXISTING            = 3
-	FILE_FLAG_NO_BUFFERING   = 0x20000000
-	FILE_FLAG_WRITE_THROUGH  = 0x80000000
-	INVALID_HANDLE_VALUE     = ^uintptr(0)
+	GENERIC_READ            = 0x80000000
+	GENERIC_WRITE           = 0x40000000
+	FILE_SHARE_READ         = 0x00000001
+	FILE_SHARE_WRITE        = 0x00000002
+	OPEN_EXISTING           = 3
+	FILE_FLAG_NO_BUFFERING  = 0x20000000
+	FILE_FLAG_WRITE_THROUGH = 0x80000000
+	INVALID_HANDLE_VALUE    = ^uintptr(0)
 )
 
 // openForRead opens a file for reading with optional direct I/O (no buffering on Windows).

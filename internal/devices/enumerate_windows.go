@@ -14,14 +14,14 @@ var (
 	setupapi = syscall.NewLazyDLL("setupapi.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 
-	procSetupDiGetClassDevsW          = setupapi.NewProc("SetupDiGetClassDevsW")
-	procSetupDiEnumDeviceInterfaces   = setupapi.NewProc("SetupDiEnumDeviceInterfaces")
+	procSetupDiGetClassDevsW             = setupapi.NewProc("SetupDiGetClassDevsW")
+	procSetupDiEnumDeviceInterfaces      = setupapi.NewProc("SetupDiEnumDeviceInterfaces")
 	procSetupDiGetDeviceInterfaceDetailW = setupapi.NewProc("SetupDiGetDeviceInterfaceDetailW")
-	procSetupDiDestroyDeviceInfoList  = setupapi.NewProc("SetupDiDestroyDeviceInfoList")
+	procSetupDiDestroyDeviceInfoList     = setupapi.NewProc("SetupDiDestroyDeviceInfoList")
 
-	procCreateFileW    = kernel32.NewProc("CreateFileW")
+	procCreateFileW     = kernel32.NewProc("CreateFileW")
 	procDeviceIoControl = kernel32.NewProc("DeviceIoControl")
-	procCloseHandle    = kernel32.NewProc("CloseHandle")
+	procCloseHandle     = kernel32.NewProc("CloseHandle")
 )
 
 // GUIDs
@@ -39,11 +39,11 @@ const (
 	DIGCF_PRESENT         = 0x00000002
 	DIGCF_DEVICEINTERFACE = 0x00000010
 
-	GENERIC_READ  = 0x80000000
-	GENERIC_WRITE = 0x40000000
+	GENERIC_READ     = 0x80000000
+	GENERIC_WRITE    = 0x40000000
 	FILE_SHARE_READ  = 0x00000001
 	FILE_SHARE_WRITE = 0x00000002
-	OPEN_EXISTING = 3
+	OPEN_EXISTING    = 3
 
 	IOCTL_DISK_GET_DRIVE_GEOMETRY_EX = 0x000700A0
 	IOCTL_DISK_GET_DRIVE_LAYOUT_EX   = 0x00070050
@@ -113,20 +113,20 @@ type STORAGE_DEVICE_DESCRIPTOR struct {
 
 // Partition layout structures
 type DRIVE_LAYOUT_INFORMATION_EX struct {
-	PartitionStyle uint32
-	PartitionCount uint32
+	PartitionStyle  uint32
+	PartitionCount  uint32
 	DriveLayoutInfo [8]byte // Union placeholder
-	PartitionEntry [1]PARTITION_INFORMATION_EX
+	PartitionEntry  [1]PARTITION_INFORMATION_EX
 }
 
 type PARTITION_INFORMATION_EX struct {
-	PartitionStyle   uint32
-	StartingOffset   int64
-	PartitionLength  int64
-	PartitionNumber  uint32
-	RewritePartition bool
+	PartitionStyle     uint32
+	StartingOffset     int64
+	PartitionLength    int64
+	PartitionNumber    uint32
+	RewritePartition   bool
 	IsServicePartition bool
-	PartitionInfo    [112]byte // Union: GPT or MBR info
+	PartitionInfo      [112]byte // Union: GPT or MBR info
 }
 
 // Partition styles
@@ -472,7 +472,7 @@ func enumeratePartitionsWindows(diskPath string, sectorSize int) []*Partition {
 			sectorSz = 512
 		}
 		startLBA := partInfo.StartingOffset / sectorSz
-		endLBA := (partInfo.StartingOffset + partInfo.PartitionLength) / sectorSz - 1
+		endLBA := (partInfo.StartingOffset+partInfo.PartitionLength)/sectorSz - 1
 
 		// Construct partition path
 		partPath := fmt.Sprintf("\\\\.\\PHYSICALDRIVE%d\\Partition%d",

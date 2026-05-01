@@ -7,12 +7,12 @@ import (
 
 // Options configures the clone operation.
 type Options struct {
-	BlockSize   int   // Block size in bytes (default 64KB)
-	Verify      bool  // Read-back verification after clone
-	DirectIO    bool  // Use O_DIRECT to bypass page cache
-	CloneBytes  int64 // Number of bytes to clone (0 = entire source)
-	FixupGPT    bool  // Update GPT backup after clone
-	DestSize    int64 // Destination size for GPT fixup
+	BlockSize  int   // Block size in bytes (default 64KB)
+	Verify     bool  // Read-back verification after clone
+	DirectIO   bool  // Use O_DIRECT to bypass page cache
+	CloneBytes int64 // Number of bytes to clone (0 = entire source)
+	FixupGPT   bool  // Update GPT backup after clone
+	DestSize   int64 // Destination size for GPT fixup
 }
 
 // DefaultOptions returns sensible defaults for cloning.
@@ -73,17 +73,17 @@ func (r Result) AvgSpeedMBps() float64 {
 
 // SizeAnalysis represents the analysis of source and destination sizes.
 type SizeAnalysis struct {
-	SourceSize       int64  // Source disk size in bytes
-	DestSize         int64  // Destination disk size in bytes
-	SourceLastUsed   int64  // Last used byte on source (from GPT)
-	Difference       int64  // DestSize - SourceSize (negative if dest smaller)
-	CanClone         bool   // Clone will fit on destination
-	NeedsGPTFixup    bool   // GPT needs to be updated after clone
-	CloneBytes       int64  // Number of bytes to actually clone
-	UnallocatedTail  int64  // Unused space at end of destination
-	HasEncryption    bool   // Source has encrypted partitions
-	ErrorMessage     string // If CanClone is false, why
-	ErrorDetails     string // Detailed instructions for fixing the error
+	SourceSize      int64  // Source disk size in bytes
+	DestSize        int64  // Destination disk size in bytes
+	SourceLastUsed  int64  // Last used byte on source (from GPT)
+	Difference      int64  // DestSize - SourceSize (negative if dest smaller)
+	CanClone        bool   // Clone will fit on destination
+	NeedsGPTFixup   bool   // GPT needs to be updated after clone
+	CloneBytes      int64  // Number of bytes to actually clone
+	UnallocatedTail int64  // Unused space at end of destination
+	HasEncryption   bool   // Source has encrypted partitions
+	ErrorMessage    string // If CanClone is false, why
+	ErrorDetails    string // Detailed instructions for fixing the error
 }
 
 // Analyze performs size analysis for a potential clone operation.

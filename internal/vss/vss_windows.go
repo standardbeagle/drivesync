@@ -14,12 +14,12 @@ import (
 
 // Snapshot represents a VSS shadow copy snapshot.
 type Snapshot struct {
-	SnapshotID   string
-	DevicePath   string
-	VolumeName   string
-	backupComp   *ole.IDispatch
-	snapshotSet  *ole.GUID
-	initialized  bool
+	SnapshotID  string
+	DevicePath  string
+	VolumeName  string
+	backupComp  *ole.IDispatch
+	snapshotSet *ole.GUID
+	initialized bool
 }
 
 // CreateSnapshot creates a VSS shadow copy of the specified volume.
@@ -150,10 +150,10 @@ func (s *Snapshot) Delete() error {
 	if s.snapshotSet != nil {
 		_, err := oleutil.CallMethod(s.backupComp, "DeleteSnapshots",
 			s.SnapshotID,
-			2,     // VSS_OBJECT_SNAPSHOT
-			true,  // force delete
-			nil,   // deleted snapshots count
-			nil)   // non-deleted snapshot ID
+			2,    // VSS_OBJECT_SNAPSHOT
+			true, // force delete
+			nil,  // deleted snapshots count
+			nil)  // non-deleted snapshot ID
 		if err != nil {
 			lastErr = fmt.Errorf("DeleteSnapshots failed: %w", err)
 		}
@@ -253,7 +253,7 @@ func GetPhysicalDriveForVolume(volumePath string) (string, error) {
 
 // Windows API declarations
 var (
-	kernel32                        = syscall.NewLazyDLL("kernel32.dll")
+	kernel32                         = syscall.NewLazyDLL("kernel32.dll")
 	getVolumeNameForVolumeMountPoint = kernel32.NewProc("GetVolumeNameForVolumeMountPointW")
 )
 

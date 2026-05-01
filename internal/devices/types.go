@@ -5,10 +5,10 @@ package devices
 type Transport string
 
 const (
-	TransportNVMe   Transport = "NVMe"
-	TransportUSB    Transport = "USB"
-	TransportSATA   Transport = "SATA"
-	TransportMMC    Transport = "SD/eMMC"
+	TransportNVMe    Transport = "NVMe"
+	TransportUSB     Transport = "USB"
+	TransportSATA    Transport = "SATA"
+	TransportMMC     Transport = "SD/eMMC"
 	TransportUnknown Transport = "Unknown"
 )
 
@@ -87,19 +87,19 @@ func (d *Disk) LastUsedByte() int64 {
 
 // Partition represents a partition on a disk.
 type Partition struct {
-	Path       string // /dev/sda1, /dev/nvme0n1p1
-	Name       string // sda1, nvme0n1p1
-	Number     int    // Partition number
-	StartLBA   int64  // Start sector (LBA)
-	EndLBA     int64  // End sector (LBA)
-	SizeBytes  int64  // Size in bytes
-	TypeGUID   string // GPT partition type GUID
-	TypeName   string // Human-readable type name (e.g., "EFI System")
-	PartGUID   string // Unique partition GUID
-	Label      string // GPT partition name/label
-	FSType     string // Filesystem type (ntfs, fat32, ext4)
-	FSLabel    string // Filesystem label
-	FSUUID     string // Filesystem UUID
+	Path      string // /dev/sda1, /dev/nvme0n1p1
+	Name      string // sda1, nvme0n1p1
+	Number    int    // Partition number
+	StartLBA  int64  // Start sector (LBA)
+	EndLBA    int64  // End sector (LBA)
+	SizeBytes int64  // Size in bytes
+	TypeGUID  string // GPT partition type GUID
+	TypeName  string // Human-readable type name (e.g., "EFI System")
+	PartGUID  string // Unique partition GUID
+	Label     string // GPT partition name/label
+	FSType    string // Filesystem type (ntfs, fat32, ext4)
+	FSLabel   string // Filesystem label
+	FSUUID    string // Filesystem UUID
 }
 
 // SizeGB returns the partition size in gigabytes.

@@ -71,4 +71,3 @@ func PopulatePartitionInfo(disks []*Disk) {
 		}
 	}
 }
-

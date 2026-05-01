@@ -25,19 +25,19 @@ const (
 
 // Header represents a GPT header (located at LBA 1 and backup at last LBA).
 type Header struct {
-	Signature         uint64   // "EFI PART" = 0x5452415020494645
-	Revision          uint32   // Usually 0x00010000 (1.0)
-	HeaderSize        uint32   // Size of header (usually 92)
-	HeaderCRC32       uint32   // CRC32 of header (with this field zeroed)
-	Reserved          uint32   // Must be zero
-	MyLBA             uint64   // LBA of this header
-	BackupLBA         uint64   // LBA of backup header
-	FirstUsableLBA    uint64   // First usable LBA for partitions
-	LastUsableLBA     uint64   // Last usable LBA for partitions
-	DiskGUID          GUID     // Unique disk identifier
-	PartitionEntryLBA uint64   // Starting LBA of partition entries
-	NumPartitions     uint32   // Number of partition entries
-	PartitionEntrySize uint32  // Size of each partition entry (usually 128)
+	Signature           uint64 // "EFI PART" = 0x5452415020494645
+	Revision            uint32 // Usually 0x00010000 (1.0)
+	HeaderSize          uint32 // Size of header (usually 92)
+	HeaderCRC32         uint32 // CRC32 of header (with this field zeroed)
+	Reserved            uint32 // Must be zero
+	MyLBA               uint64 // LBA of this header
+	BackupLBA           uint64 // LBA of backup header
+	FirstUsableLBA      uint64 // First usable LBA for partitions
+	LastUsableLBA       uint64 // Last usable LBA for partitions
+	DiskGUID            GUID   // Unique disk identifier
+	PartitionEntryLBA   uint64 // Starting LBA of partition entries
+	NumPartitions       uint32 // Number of partition entries
+	PartitionEntrySize  uint32 // Size of each partition entry (usually 128)
 	PartitionEntryCRC32 uint32 // CRC32 of partition entries
 }
 

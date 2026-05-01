@@ -67,50 +67,50 @@ func TestResultAvgSpeedMBps(t *testing.T) {
 
 func TestAnalyze(t *testing.T) {
 	tests := []struct {
-		name        string
-		srcSize     int64
-		dstSize     int64
-		srcLastUsed int64
+		name         string
+		srcSize      int64
+		dstSize      int64
+		srcLastUsed  int64
 		wantCanClone bool
 		wantNeedsGPT bool
 	}{
 		{
-			name:        "Destination larger than source",
-			srcSize:     1000,
-			dstSize:     2000,
-			srcLastUsed: 0,
+			name:         "Destination larger than source",
+			srcSize:      1000,
+			dstSize:      2000,
+			srcLastUsed:  0,
 			wantCanClone: true,
 			wantNeedsGPT: false,
 		},
 		{
-			name:        "Same size",
-			srcSize:     1000,
-			dstSize:     1000,
-			srcLastUsed: 0,
+			name:         "Same size",
+			srcSize:      1000,
+			dstSize:      1000,
+			srcLastUsed:  0,
 			wantCanClone: true,
 			wantNeedsGPT: false,
 		},
 		{
-			name:        "Destination smaller but data fits",
-			srcSize:     2000,
-			dstSize:     1500,
-			srcLastUsed: 1000,
+			name:         "Destination smaller but data fits",
+			srcSize:      2000,
+			dstSize:      1500,
+			srcLastUsed:  1000,
 			wantCanClone: true,
 			wantNeedsGPT: true,
 		},
 		{
-			name:        "Destination too small for data",
-			srcSize:     2000,
-			dstSize:     500,
-			srcLastUsed: 1000,
+			name:         "Destination too small for data",
+			srcSize:      2000,
+			dstSize:      500,
+			srcLastUsed:  1000,
 			wantCanClone: false,
 			wantNeedsGPT: false,
 		},
 		{
-			name:        "Destination smaller, no GPT info",
-			srcSize:     2000,
-			dstSize:     1500,
-			srcLastUsed: 0,
+			name:         "Destination smaller, no GPT info",
+			srcSize:      2000,
+			dstSize:      1500,
+			srcLastUsed:  0,
 			wantCanClone: false,
 			wantNeedsGPT: false,
 		},
@@ -146,9 +146,9 @@ func TestAnalyze(t *testing.T) {
 
 func TestAnalyze2TBDrives(t *testing.T) {
 	// Real-world test case: 2TB drives with different actual sizes
-	wdBlue := int64(2000398934016)      // WD Blue 2TB
-	samsung := int64(1999844147200)     // Samsung 870 2TB
-	usedSpace := int64(500 * 1e9)       // 500GB used
+	wdBlue := int64(2000398934016)  // WD Blue 2TB
+	samsung := int64(1999844147200) // Samsung 870 2TB
+	usedSpace := int64(500 * 1e9)   // 500GB used
 
 	result := Analyze(wdBlue, samsung, usedSpace)
 
@@ -194,9 +194,9 @@ func TestDefaultOptions(t *testing.T) {
 
 func TestProgressRemainingTime(t *testing.T) {
 	p := Progress{
-		Copied:   500 * 1e9, // 500GB
+		Copied:   500 * 1e9,  // 500GB
 		Total:    1000 * 1e9, // 1TB
-		AvgSpeed: 500 * 1e6, // 500 MB/s
+		AvgSpeed: 500 * 1e6,  // 500 MB/s
 		Elapsed:  1000 * time.Second,
 	}
 
