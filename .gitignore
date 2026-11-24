@@ -14,3 +14,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# tman shims
+/test
+/test.cmd
